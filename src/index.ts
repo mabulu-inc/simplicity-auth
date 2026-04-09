@@ -40,3 +40,10 @@ export {
   setSessionContext,
   SESSION_VAR_NAMES,
 } from './set-helpers.js';
+
+// Developer OTP — for devs whose phones can't receive Twilio SMS.
+export {
+  verifyDevOtp,
+  generateDevOtpSecret,
+  getDevOtpEnrollmentUri,
+} from './dev-otp.js';

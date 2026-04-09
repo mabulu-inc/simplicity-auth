@@ -1,0 +1,37 @@
+table: dev_otp_enrollments
+columns:
+  # The user_communication_method this enrollment is for. There can only
+  # be one dev OTP enrollment per communication method (PK + FK).
+  - name: user_communication_method_id
+    type: integer
+    primary_key: true
+    references:
+      table: user_communication_methods
+      column: user_communication_method_id
+
+  # Base32-encoded TOTP shared secret. Compatible with any standard TOTP
+  # authenticator (1Password, Authy, Google Authenticator, etc.).
+  # Recommend storing encrypted at rest if your Postgres has pgcrypto;
+  # the library reads/writes the raw value.
+  - name: totp_secret
+    type: text
+    nullable: false
+
+  # Human label for the enrollment — useful when an admin needs to
+  # know whose phone this is. Examples: "Sam's iPhone", "Mark's 1Password vault".
+  - name: label
+    type: text
+    nullable: false
+
+  - name: enrolled_at
+    type: timestamptz
+    nullable: false
+    default: now()
+
+  - name: last_used_at
+    type: timestamptz
+
+  - name: used_count
+    type: integer
+    nullable: false
+    default: 0

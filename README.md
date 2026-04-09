@@ -171,6 +171,98 @@ await revokeSession(db, sessionId); // idempotent — no error if already revoke
 
 Hard-deletes the session row.
 
+## Developer OTP — for devs whose phones can't receive SMS
+
+Twilio's Verify service doesn't deliver SMS to every carrier reliably (especially overseas, certain pre-paid carriers, and some VoIP numbers). Real-world projects need a way for developers to sign in even when SMS delivery is broken.
+
+`@smplcty/auth` ships per-developer TOTP enrollment for exactly this case. Each enrolled dev has their own time-based one-time password secret stored in `dev_otp_enrollments`, scanned into a standard authenticator app (1Password, Authy, Google Authenticator, etc.). The sign-in-verify handler tries the dev OTP first; if it doesn't match, it falls through to Twilio.
+
+### Verifying a dev OTP
+
+```ts
+import { verifyDevOtp } from '@smplcty/auth';
+
+// In your sign-in-verify handler, AFTER looking up the user:
+const ok = await verifyDevOtp(db, userCommunicationMethodId, submittedCode);
+if (ok) {
+  // Log an audit event with phone, IP, timestamp.
+  return createSession(db, { userCommunicationMethodId, ttl: '30 days', ip, geo });
+}
+
+// Fall through to Twilio Verify
+const verified = await verifyVerificationCode(to, submittedCode);
+if (verified) {
+  return createSession(db, { ... });
+}
+
+return { statusCode: 400, body: 'Invalid code' };
+```
+
+`verifyDevOtp` returns `false` (does not throw) when:
+- The user has no row in `dev_otp_enrollments`
+- The submitted code doesn't match a TOTP for the stored secret within the ±30s tolerance window
+- The stored secret is malformed (caught and treated as a non-match)
+
+On success it updates the enrollment row's `last_used_at` and `used_count`, giving you a built-in audit signal that the dev OTP path was taken.
+
+### Enrolling a dev
+
+There's no shipped CLI — at the team sizes this library is designed for, manual enrollment via SQL is fine and explicit. Here's the recipe:
+
+```ts
+// One-off enrollment script: scripts/enroll-dev.mts
+import { generateDevOtpSecret, getDevOtpEnrollmentUri } from '@smplcty/auth';
+import qrcode from 'qrcode'; // pnpm add -D qrcode
+
+const phone = process.argv[2];     // e.g. '+15558675309'
+const label = process.argv[3];     // e.g. 'sam@salez1.com'
+const issuer = 'Salez1';
+
+const secret = generateDevOtpSecret();
+const uri = getDevOtpEnrollmentUri({ secret, label, issuer });
+
+console.log('\nScan this QR code with your authenticator app:\n');
+console.log(await qrcode.toString(uri, { type: 'terminal', small: true }));
+console.log(`\nManual entry secret: ${secret}\n`);
+console.log('After scanning, run this SQL against your database:');
+console.log(`
+INSERT INTO dev_otp_enrollments (user_communication_method_id, totp_secret, label)
+SELECT ucm.user_communication_method_id, '${secret}', '${label.replace(/'/g, "''")}'
+FROM user_communication_methods ucm
+JOIN communication_channels cc ON cc.communication_channel_id = ucm.communication_channel_id
+WHERE cc.name = 'phone' AND ucm.code = '${phone}';
+`);
+```
+
+Run it with `pnpm tsx scripts/enroll-dev.mts +15558675309 'Sam (iPhone)'`. The script generates a fresh secret, prints a scannable QR code, and gives you the SQL to run against your database.
+
+### Revoking a dev's enrollment
+
+```sql
+DELETE FROM dev_otp_enrollments
+WHERE user_communication_method_id = (
+  SELECT user_communication_method_id
+  FROM user_communication_methods ucm
+  JOIN communication_channels cc ON cc.communication_channel_id = ucm.communication_channel_id
+  WHERE cc.name = 'phone' AND ucm.code = '+15558675309'
+);
+```
+
+The next sign-in-verify call for that user will fall through to Twilio as if they were never enrolled.
+
+### Why per-dev TOTP instead of a shared bypass code?
+
+Earlier versions of this codebase used a `DEV_PHONE_NUMBERS` + `DEV_VERIFICATION_CODE` env var pair where any dev phone, when paired with the magic env var code, bypassed Twilio. That design has several problems: a single static secret shared across all devs, no per-dev revocation, no audit trail, and the bypass mechanism baked into the source code as a recipe for "how to sign in without OTP." Per-dev TOTP fixes all of these:
+
+| Concern | Shared bypass code | Per-dev TOTP |
+|---|---|---|
+| Secret leak blast radius | Every dev account compromised | One dev account |
+| Per-dev revocation | Rotate the shared secret + everyone re-syncs | Delete one row |
+| Audit trail | None | `last_used_at` + `used_count` per enrollment |
+| Brute-force resistance | 6-digit space, no rotation | 6-digit space, rotates every 30s |
+| Source-code visible | Shared secret + bypass logic | Just the verification code path; secrets are per-dev in the DB |
+| Possession factor | Just env var knowledge | Authenticator app on a specific device |
+
 ## Typed roles
 
 By default `roleName` is typed as `string`, which works for any consumer. To get autocomplete and typo detection for your specific role names, write a thin wrapper in your application code:

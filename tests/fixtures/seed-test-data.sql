@@ -43,6 +43,11 @@ INSERT INTO user_roles (user_id, role_id, tenant_id) VALUES
   (3, (SELECT role_id FROM roles WHERE name = 'settings'), NULL)  -- GlobalAdmin
 ON CONFLICT DO NOTHING;
 
+-- Note: dev OTP enrollments are created at test runtime by the dev-otp
+-- test file's beforeAll hook (using generateDevOtpSecret), not seeded
+-- here. This keeps TOTP secrets out of the source tree and avoids
+-- false positives from secret scanners.
+
 -- Reset sequences past the manually-assigned IDs so subsequent test
 -- INSERTs (e.g. the rollback test that inserts a new tenant) get fresh
 -- autoincrement IDs without colliding.
