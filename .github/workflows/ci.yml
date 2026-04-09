@@ -1,0 +1,96 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Cancel an in-progress run for the same ref when a new push lands.
+# Each unique ref still gets its own queue, so PRs and main don't
+# interfere with each other.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Lint, type-check, gitleaks, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 54320:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          # gitleaks needs the full git history to scan every commit,
+          # not just the latest tree.
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      # Fast checks first, fail fast.
+
+      - name: Lint
+        # eslint config exists; if it ever doesn't, this step will fail
+        # loudly so we don't silently lose linting.
+        run: pnpm run lint
+        continue-on-error: false
+
+      - name: Type-check
+        run: pnpm run typecheck
+
+      - name: Install gitleaks
+        # Pinned to a specific version so the gate is reproducible.
+        # Bump deliberately when we want a newer rule set.
+        env:
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+
+      - name: Run gitleaks (full git history)
+        run: gitleaks git . --no-banner --redact
+
+      - name: Run tests against Postgres service
+        env:
+          # When DATABASE_URL is set, the vitest globalSetup skips
+          # docker-compose and uses this connection directly.
+          DATABASE_URL: postgresql://postgres:postgres@localhost:54320/postgres
+        run: pnpm test
+
+      - name: Build distribution
+        run: pnpm run build

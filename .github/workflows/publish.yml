@@ -49,6 +49,10 @@ jobs:
     steps:
       - name: Check out code at the release tag
         uses: actions/checkout@v6
+        with:
+          # Full git history so the gitleaks step below can scan
+          # every commit, not just the release tree.
+          fetch-depth: 0
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v5
@@ -64,6 +68,23 @@ jobs:
 
       - name: Install dependencies (frozen lockfile)
         run: pnpm install --frozen-lockfile
+
+      # Defense in depth: scan for leaked secrets even on release.
+      # ci.yml runs gitleaks on every PR and push to main, but a
+      # secret could in theory land via direct push, force-push, or
+      # admin override. This step ensures it never reaches the npm
+      # tarball — failing here prevents the publish.
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+
+      - name: Run gitleaks (full git history)
+        run: gitleaks git . --no-banner --redact
 
       - name: Verify release tag matches package.json version
         run: |

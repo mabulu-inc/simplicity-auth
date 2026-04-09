@@ -91,23 +91,20 @@ export async function verifyDevOtp(
     return false;
   }
 
-  let valid = false;
   try {
     const result = verifySync({
       secret: enrollment.totpSecret,
       token: code,
       epochTolerance: EPOCH_TOLERANCE_SECONDS,
     });
-    valid = result.valid;
+    if (!result.valid) {
+      return false;
+    }
   } catch {
     // otplib throws on malformed secrets or non-numeric tokens — treat
     // as a non-match rather than crashing the request. A malformed
     // secret in the DB is a configuration error worth noticing through
     // the consumer's audit pipeline.
-    return false;
-  }
-
-  if (!valid) {
     return false;
   }
 
