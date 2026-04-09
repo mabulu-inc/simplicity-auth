@@ -12,27 +12,31 @@ import { startTestDb, type TestDb } from './helpers/test-db.js';
 const ALICE_UCM_ID = 1; // matches seed-test-data.sql
 const BOB_UCM_ID = 2; // not enrolled
 
+// One TestDb shared by every describe block in this file. Two TestDb
+// instances per file caused a CI flake: schema-flow's cleanup() calls
+// pg_terminate_backend on the test db, which races against the other
+// describe block's pool teardown. Sharing one db avoids the race
+// entirely.
+let db: TestDb;
+let aliceSecret: string;
+
+beforeAll(async () => {
+  db = await startTestDb();
+  aliceSecret = generateDevOtpSecret();
+  await db.pool.query(
+    `INSERT INTO dev_otp_enrollments (user_communication_method_id, totp_secret, label)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (user_communication_method_id) DO UPDATE
+       SET totp_secret = EXCLUDED.totp_secret`,
+    [ALICE_UCM_ID, aliceSecret, "Alice's test enrollment"],
+  );
+});
+
+afterAll(async () => {
+  await db.shutdown();
+});
+
 describe('verifyDevOtp', () => {
-  let db: TestDb;
-  // Generated at test setup so no TOTP secret literal lives in source.
-  let aliceSecret: string;
-
-  beforeAll(async () => {
-    db = await startTestDb();
-    aliceSecret = generateDevOtpSecret();
-    await db.pool.query(
-      `INSERT INTO dev_otp_enrollments (user_communication_method_id, totp_secret, label)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (user_communication_method_id) DO UPDATE
-         SET totp_secret = EXCLUDED.totp_secret`,
-      [ALICE_UCM_ID, aliceSecret, "Alice's test enrollment"],
-    );
-  });
-
-  afterAll(async () => {
-    await db.shutdown();
-  });
-
   beforeEach(async () => {
     // Reset usage counters between tests so assertions are reliable.
     await db.pool.query(
@@ -165,25 +169,8 @@ describe('generateDevOtpSecret', () => {
 });
 
 describe('isDevOtpEnrolled', () => {
-  let db: TestDb;
-
-  beforeAll(async () => {
-    db = await startTestDb();
-    // Enroll Alice; Bob is intentionally not enrolled.
-    await db.pool.query(
-      `INSERT INTO dev_otp_enrollments (user_communication_method_id, totp_secret, label)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (user_communication_method_id) DO UPDATE
-         SET totp_secret = EXCLUDED.totp_secret`,
-      [ALICE_UCM_ID, generateDevOtpSecret(), "Alice's enrollment"],
-    );
-  });
-
-  afterAll(async () => {
-    await db.shutdown();
-  });
-
   it('returns true for an enrolled user', async () => {
+    // Alice is enrolled by the file-level beforeAll above.
     expect(await isDevOtpEnrolled(db.pool, ALICE_UCM_ID)).toBe(true);
   });
 
