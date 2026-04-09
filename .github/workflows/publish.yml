@@ -1,12 +1,17 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-name: Publish
+name: Publish to npm
 
+# Triggered by creating a GitHub Release. The release tag (e.g. v0.1.1)
+# determines what gets published — the workflow checks out the tagged
+# commit and verifies that package.json's version matches.
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [published]
 
-# OIDC token for npm provenance attestations
+# id-token: write is required for npm trusted publishing via OIDC.
+# The runner mints a short-lived OIDC ID token, exchanges it at the
+# npm registry for a publish credential, and publishes — no long-lived
+# NPM_TOKEN secret is stored anywhere.
 permissions:
   contents: read
   id-token: write
@@ -20,9 +25,29 @@ jobs:
     name: Test, build, and publish to npm
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # The "npm" GitHub Actions environment is the trust boundary on the
+    # GitHub side. It must exist in the repo settings (Settings →
+    # Environments) and be referenced by name in the npm trusted
+    # publisher configuration.
+    environment: npm
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 54320:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
-      - name: Check out code at the tag
+      - name: Check out code at the release tag
         uses: actions/checkout@v4
 
       - name: Set up pnpm
@@ -35,17 +60,17 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          registry-url: 'https://registry.npmjs.org'
+          registry-url: https://registry.npmjs.org
 
       - name: Install dependencies (frozen lockfile)
         run: pnpm install --frozen-lockfile
 
-      - name: Verify tag matches package.json version
+      - name: Verify release tag matches package.json version
         run: |
           TAG="${GITHUB_REF##refs/tags/v}"
           PKG=$(node -p "require('./package.json').version")
           if [ "$TAG" != "$PKG" ]; then
-            echo "::error::Tag v$TAG does not match package.json version $PKG"
+            echo "::error::Release tag v$TAG does not match package.json version $PKG"
             exit 1
           fi
           echo "Tag and package.json version match: $PKG"
@@ -53,13 +78,18 @@ jobs:
       - name: Type-check
         run: pnpm run typecheck
 
-      - name: Run tests (testcontainers spins up Postgres)
+      - name: Run tests against Postgres service
+        env:
+          # When DATABASE_URL is set, the vitest globalSetup skips
+          # docker-compose and uses this connection directly.
+          DATABASE_URL: postgresql://postgres:postgres@localhost:54320/postgres
         run: pnpm test
 
       - name: Build distribution
         run: pnpm run build
 
+      # No NODE_AUTH_TOKEN — npm publish exchanges the GitHub OIDC token
+      # for a short-lived publish credential via the trusted publisher
+      # configured at https://www.npmjs.com/package/@smplcty/auth/access
       - name: Publish to npm with provenance
-        run: pnpm publish --no-git-checks --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public
