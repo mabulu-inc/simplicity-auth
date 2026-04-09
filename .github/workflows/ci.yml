@@ -94,3 +94,20 @@ jobs:
 
       - name: Build distribution
         run: pnpm run build
+
+      # Advisory: warn (don't fail) when a direct dep has a newer
+      # release on npm than what's installed. Catches "typescript-eslint
+      # 9 just dropped" before we discover it at upgrade time. Runs
+      # last because it's the lowest-priority check — actual test or
+      # build failures should surface first.
+      - name: Check for outdated direct dependencies (non-blocking)
+        run: |
+          set +e
+          OUTPUT=$(pnpm outdated --long 2>&1)
+          STATUS=$?
+          if [ $STATUS -ne 0 ]; then
+            echo "::warning title=Outdated dependencies::One or more direct dependencies have newer releases on npm. Run 'pnpm outdated --long' locally to see the diff and 'pnpm up --latest' to upgrade."
+            echo "$OUTPUT"
+          else
+            echo "All direct dependencies on latest."
+          fi
