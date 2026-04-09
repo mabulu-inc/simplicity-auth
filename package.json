@@ -1,0 +1,69 @@
+{
+  "name": "@smplcty/auth",
+  "version": "0.1.0",
+  "description": "Robust, type-safe session and role-based authentication primitives for PostgreSQL apps using Row-Level Security.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "schema",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/",
+    "provenance": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mabulu-inc/simplicity-auth.git"
+  },
+  "homepage": "https://github.com/mabulu-inc/simplicity-auth#readme",
+  "bugs": {
+    "url": "https://github.com/mabulu-inc/simplicity-auth/issues"
+  },
+  "keywords": [
+    "postgres",
+    "postgresql",
+    "rls",
+    "row-level-security",
+    "session",
+    "auth",
+    "authentication",
+    "authorization",
+    "multi-tenant"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "rm -rf dist",
+    "lint": "eslint src tests",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "peerDependencies": {
+    "pg": ">=8.0.0"
+  },
+  "devDependencies": {
+    "@smplcty/schema-flow": "^0.3.7",
+    "@types/node": "^25.5.2",
+    "@types/pg": "^8.20.0",
+    "eslint": "^10.2.0",
+    "pg": "^8.20.0",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.4"
+  }
+}

@@ -1,0 +1,7 @@
+table: users
+columns:
+  - name: user_id
+    type: serial
+    primary_key: true
+  - name: name
+    type: text

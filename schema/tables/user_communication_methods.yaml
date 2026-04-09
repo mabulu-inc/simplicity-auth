@@ -1,0 +1,23 @@
+table: user_communication_methods
+columns:
+  - name: user_communication_method_id
+    type: serial
+    primary_key: true
+  - name: user_id
+    type: integer
+    nullable: false
+    references:
+      table: users
+      column: user_id
+  - name: communication_channel_id
+    type: integer
+    nullable: false
+    references:
+      table: communication_channels
+      column: communication_channel_id
+  - name: code
+    type: text
+    nullable: false
+unique_constraints:
+  - columns: [communication_channel_id, code]
+    name: user_communication_methods_channel_code_key

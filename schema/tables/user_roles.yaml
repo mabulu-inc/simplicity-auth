@@ -1,0 +1,25 @@
+table: user_roles
+columns:
+  - name: user_role_id
+    type: serial
+    primary_key: true
+  - name: user_id
+    type: integer
+    nullable: false
+    references:
+      table: users
+      column: user_id
+  - name: role_id
+    type: integer
+    nullable: false
+    references:
+      table: roles
+      column: role_id
+  # tenant_id IS NULL means a global role (applies to all tenants).
+  # The auth library reads this as `app.all_tenants = 'true'`.
+  - name: tenant_id
+    type: integer
+    nullable: true
+    references:
+      table: tenants
+      column: tenant_id

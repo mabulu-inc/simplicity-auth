@@ -1,0 +1,29 @@
+table: roles
+columns:
+  - name: role_id
+    type: serial
+    primary_key: true
+  - name: name
+    type: text
+    nullable: false
+unique_constraints:
+  - columns: [name]
+    name: roles_name_key
+# The canonical role names @smplcty/auth's withSession() validates against.
+#
+# IDs 1-3 are reserved for these standard roles. Consumers adding their
+# own roles should use IDs >= 100 to avoid colliding with future
+# standard-role additions. The library never references these IDs
+# directly — it always looks up by name — so the IDs are just a stable
+# convention for migration-time conflict detection.
+#
+# Seeds use ON CONFLICT DO NOTHING via schema-flow, so re-running this
+# migration against an already-seeded database is a no-op.
+seeds:
+  - role_id: 1
+    name: 'user'
+  - role_id: 2
+    name: 'settings'
+  - role_id: 3
+    name: 'security'
+seeds_on_conflict: 'DO NOTHING'

@@ -1,0 +1,11 @@
+table: tenants
+columns:
+  - name: tenant_id
+    type: serial
+    primary_key: true
+  - name: name
+    type: text
+    nullable: false
+unique_constraints:
+  - columns: [name]
+    name: tenants_name_key

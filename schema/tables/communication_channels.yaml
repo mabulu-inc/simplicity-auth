@@ -1,0 +1,11 @@
+table: communication_channels
+columns:
+  - name: communication_channel_id
+    type: serial
+    primary_key: true
+  - name: name
+    type: text
+    nullable: false
+unique_constraints:
+  - columns: [name]
+    name: communication_channels_name_key

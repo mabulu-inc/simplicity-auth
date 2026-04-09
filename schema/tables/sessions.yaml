@@ -1,0 +1,30 @@
+table: sessions
+columns:
+  - name: session_id
+    type: text
+    primary_key: true
+  - name: user_communication_method_id
+    type: integer
+    nullable: false
+    references:
+      table: user_communication_methods
+      column: user_communication_method_id
+  - name: created_at
+    type: timestamptz
+    nullable: false
+    default: now()
+  - name: expires_at
+    type: timestamptz
+    nullable: false
+  - name: ip
+    type: text
+  - name: city
+    type: text
+  - name: region
+    type: text
+  - name: country
+    type: text
+  - name: latitude
+    type: text
+  - name: longitude
+    type: text
