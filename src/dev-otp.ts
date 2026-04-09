@@ -21,6 +21,13 @@ const SELECT_ENROLLMENT = `
   WHERE user_communication_method_id = $1
 `;
 
+const SELECT_ENROLLMENT_EXISTS = `
+  SELECT 1
+  FROM dev_otp_enrollments
+  WHERE user_communication_method_id = $1
+  LIMIT 1
+`;
+
 const RECORD_USE = `
   UPDATE dev_otp_enrollments
   SET last_used_at = now(),
@@ -110,6 +117,45 @@ export async function verifyDevOtp(
 
   await db.query(RECORD_USE, [userCommunicationMethodId]);
   return true;
+}
+
+/**
+ * Check whether a user_communication_method has a dev OTP enrollment.
+ *
+ * Use this on the **send** side of a sign-in flow to skip the Twilio
+ * SMS send for dev-enrolled users — they'll generate their code from
+ * an authenticator app instead, so the SMS would be wasted (and may
+ * not deliver anyway, which is the whole reason they're enrolled in
+ * dev OTP).
+ *
+ * @example
+ * ```ts
+ * const enrolled = await isDevOtpEnrolled(db, user.userCommunicationMethodId);
+ * if (!enrolled) {
+ *   await twilio.sendVerificationCode({ channel: 'sms', to });
+ * }
+ * return ok(); // dev users get the same response shape; the verify
+ *              // step will accept their TOTP code
+ * ```
+ *
+ * @throws {InvalidInputError} If `userCommunicationMethodId` is not a positive integer.
+ */
+export async function isDevOtpEnrolled(
+  db: Queryable,
+  userCommunicationMethodId: number,
+): Promise<boolean> {
+  if (
+    !Number.isInteger(userCommunicationMethodId) ||
+    userCommunicationMethodId <= 0
+  ) {
+    throw new InvalidInputError(
+      'userCommunicationMethodId must be a positive integer',
+    );
+  }
+  const { rowCount } = await db.query(SELECT_ENROLLMENT_EXISTS, [
+    userCommunicationMethodId,
+  ]);
+  return (rowCount ?? 0) > 0;
 }
 
 /**

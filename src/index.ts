@@ -44,6 +44,7 @@ export {
 // Developer OTP — for devs whose phones can't receive Twilio SMS.
 export {
   verifyDevOtp,
+  isDevOtpEnrolled,
   generateDevOtpSecret,
   getDevOtpEnrollmentUri,
 } from './dev-otp.js';

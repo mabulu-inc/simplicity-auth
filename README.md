@@ -177,25 +177,71 @@ Twilio's Verify service doesn't deliver SMS to every carrier reliably (especiall
 
 `@smplcty/auth` ships per-developer TOTP enrollment for exactly this case. Each enrolled dev has their own time-based one-time password secret stored in `dev_otp_enrollments`, scanned into a standard authenticator app (1Password, Authy, Google Authenticator, etc.). The sign-in-verify handler tries the dev OTP first; if it doesn't match, it falls through to Twilio.
 
-### Verifying a dev OTP
+### How the codes are distinguished from Twilio codes
+
+**They aren't, by format.** A 6-digit TOTP code from an authenticator app is indistinguishable from a 6-digit SMS code from Twilio. Users type whatever they have into the same input field. The backend figures out which one was used by **trying dev OTP first, then falling through to Twilio**.
+
+The 1-in-1,000,000 collision risk between a wrong Twilio code and the user's current TOTP is negligible, and the audit trail (`dev_otp_enrollments.last_used_at` + `used_count`) lets you tell after the fact which path succeeded for any given sign-in.
+
+### Send side: skip Twilio for dev-enrolled users
+
+When a user is enrolled in dev OTP, you don't need to send them an SMS at all — they'll generate their code from their authenticator app. Use `isDevOtpEnrolled` to skip the Twilio call:
 
 ```ts
-import { verifyDevOtp } from '@smplcty/auth';
+import { findUserByCommunicationMethod, isDevOtpEnrolled } from '@smplcty/auth';
+import { createTwilioVerifyClient } from '@smplcty/twilio';
 
-// In your sign-in-verify handler, AFTER looking up the user:
-const ok = await verifyDevOtp(db, userCommunicationMethodId, submittedCode);
-if (ok) {
-  // Log an audit event with phone, IP, timestamp.
-  return createSession(db, { userCommunicationMethodId, ttl: '30 days', ip, geo });
+const twilio = createTwilioVerifyClient({ /* ... */ });
+
+// Sign-in send handler:
+const lookup = await findUserByCommunicationMethod(db, { channel: 'phone', code: phone });
+if (!lookup) {
+  // User not registered. Return success anyway to avoid the enumeration oracle.
+  return ok();
 }
 
-// Fall through to Twilio Verify
-const verified = await verifyVerificationCode(to, submittedCode);
-if (verified) {
-  return createSession(db, { ... });
+const enrolled = await isDevOtpEnrolled(db, lookup.userCommunicationMethodId);
+if (!enrolled) {
+  // Normal user — send the SMS code.
+  await twilio.sendVerificationCode({ channel: 'sms', to: phone });
+}
+// Dev-enrolled user gets the same response shape with no SMS — they
+// already know to open their authenticator app.
+
+return ok();
+```
+
+`isDevOtpEnrolled(db, userCommunicationMethodId)` returns `boolean`. Cheap one-row lookup. Throws `InvalidInputError` if the id is malformed.
+
+### Verify side: try dev OTP first, fall through to Twilio
+
+```ts
+import { verifyDevOtp, createSession, findUserByCommunicationMethod } from '@smplcty/auth';
+import { createTwilioVerifyClient } from '@smplcty/twilio';
+
+const twilio = createTwilioVerifyClient({ /* ... */ });
+
+// Sign-in verify handler:
+const lookup = await findUserByCommunicationMethod(db, { channel: 'phone', code: phone });
+if (!lookup) return badRequest('Invalid code');
+
+// 1. Try dev OTP first.
+const devOk = await verifyDevOtp(db, lookup.userCommunicationMethodId, submittedCode);
+if (devOk) {
+  // dev_otp_enrollments.last_used_at and used_count have been updated
+  // — that's your built-in audit signal that the dev path was taken.
+  return await createSessionResponse(db, lookup, ip, geo);
 }
 
-return { statusCode: 400, body: 'Invalid code' };
+// 2. Fall through to Twilio. For users without a dev enrollment this
+//    is the only path; for users with one whose code didn't match (e.g.
+//    they happened to type the SMS code), this is the fallback.
+const twilioOk = await twilio.verifyVerificationCode({ to: phone, code: submittedCode });
+if (twilioOk) {
+  return await createSessionResponse(db, lookup, ip, geo);
+}
+
+return badRequest('Invalid code');
 ```
 
 `verifyDevOtp` returns `false` (does not throw) when:
@@ -204,6 +250,8 @@ return { statusCode: 400, body: 'Invalid code' };
 - The stored secret is malformed (caught and treated as a non-match)
 
 On success it updates the enrollment row's `last_used_at` and `used_count`, giving you a built-in audit signal that the dev OTP path was taken.
+
+Both `verifyDevOtp` and `isDevOtpEnrolled` return `false` regardless of whether the user is enrolled or not (just with different conditions), so neither leaks enrollment status to the caller.
 
 ### Enrolling a dev
 

@@ -4,6 +4,7 @@ import {
   generateDevOtpSecret,
   getDevOtpEnrollmentUri,
   InvalidInputError,
+  isDevOtpEnrolled,
   verifyDevOtp,
 } from '../src/index.js';
 import { startTestDb, type TestDb } from './helpers/test-db.js';
@@ -160,6 +161,44 @@ describe('generateDevOtpSecret', () => {
     const secret = generateDevOtpSecret();
     const code = generateSync({ secret });
     expect(verifySync({ secret, token: code }).valid).toBe(true);
+  });
+});
+
+describe('isDevOtpEnrolled', () => {
+  let db: TestDb;
+
+  beforeAll(async () => {
+    db = await startTestDb();
+    // Enroll Alice; Bob is intentionally not enrolled.
+    await db.pool.query(
+      `INSERT INTO dev_otp_enrollments (user_communication_method_id, totp_secret, label)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (user_communication_method_id) DO UPDATE
+         SET totp_secret = EXCLUDED.totp_secret`,
+      [ALICE_UCM_ID, generateDevOtpSecret(), "Alice's enrollment"],
+    );
+  });
+
+  afterAll(async () => {
+    await db.shutdown();
+  });
+
+  it('returns true for an enrolled user', async () => {
+    expect(await isDevOtpEnrolled(db.pool, ALICE_UCM_ID)).toBe(true);
+  });
+
+  it('returns false for a user with no enrollment', async () => {
+    expect(await isDevOtpEnrolled(db.pool, BOB_UCM_ID)).toBe(false);
+  });
+
+  it('throws InvalidInputError on bad userCommunicationMethodId', async () => {
+    await expect(isDevOtpEnrolled(db.pool, -1)).rejects.toBeInstanceOf(
+      InvalidInputError,
+    );
+    await expect(
+      // @ts-expect-error testing runtime validation
+      isDevOtpEnrolled(db.pool, 'one'),
+    ).rejects.toBeInstanceOf(InvalidInputError);
   });
 });
 
