@@ -27,6 +27,8 @@ export { validateSession } from './validate-session.js';
 export { revokeSession } from './revoke-session.js';
 export { findUserByCommunicationMethod } from './find-user-by-communication-method.js';
 
+export { getUserRoleNames } from './get-user-role-names.js';
+
 // Request bootstrapping
 export { withSession } from './with-session.js';
 export { withTransaction } from './with-transaction.js';
