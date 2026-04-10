@@ -1,13 +1,24 @@
 import { InvalidInputError } from './errors.js';
 import type { Queryable } from './types.js';
 
-const DELETE_SESSION = 'DELETE FROM sessions WHERE session_id = $1';
+const EXPIRE_SESSION = `
+  UPDATE sessions
+  SET expires_at = now()
+  WHERE session_id = $1
+    AND (expires_at IS NULL OR expires_at > now())
+`;
 
 /**
- * Revoke a session by hard-deleting its row from the `sessions` table.
+ * Revoke a session by setting its `expires_at` to now.
  *
- * Idempotent: revoking a non-existent session is not an error. Returns
- * normally regardless of whether a row was deleted.
+ * The session row is preserved for audit — you can distinguish
+ * "explicitly revoked" (expires_at close to created_at) from
+ * "expired naturally" (expires_at = created_at + ttl). The
+ * `session_authorization()` RLS function already checks
+ * `expires_at > now()`, so the session is locked out immediately.
+ *
+ * Idempotent: revoking a non-existent or already-expired session
+ * is not an error.
  *
  * @example
  * ```ts
@@ -23,5 +34,5 @@ export async function revokeSession(
   if (typeof sessionId !== 'string' || sessionId.length === 0) {
     throw new InvalidInputError('sessionId must be a non-empty string');
   }
-  await db.query(DELETE_SESSION, [sessionId]);
+  await db.query(EXPIRE_SESSION, [sessionId]);
 }

@@ -3,7 +3,7 @@ import {
   createSession,
   InvalidInputError,
   revokeSession,
-  SessionNotFoundError,
+  SessionExpiredError,
   validateSession,
 } from '../src/index.js';
 import { startTestDb, type TestDb } from './helpers/test-db.js';
@@ -23,18 +23,19 @@ describe('revokeSession', () => {
     await db.resetSessions();
   });
 
-  it('hard-deletes the session row', async () => {
+  it('soft-expires the session row', async () => {
     const session = await createSession(db.pool, {
       userCommunicationMethodId: 1,
       ttl: '1 day',
     });
     await revokeSession(db.pool, session.sessionId);
 
-    const { rows } = await db.pool.query(
-      'SELECT * FROM sessions WHERE session_id = $1',
+    const { rows } = await db.pool.query<{ expires_at: Date }>(
+      'SELECT expires_at FROM sessions WHERE session_id = $1',
       [session.sessionId],
     );
-    expect(rows).toHaveLength(0);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.expires_at.getTime()).toBeLessThanOrEqual(Date.now());
   });
 
   it('makes a previously-valid session unfindable by validateSession', async () => {
@@ -47,7 +48,7 @@ describe('revokeSession', () => {
     await revokeSession(db.pool, session.sessionId);
     await expect(
       validateSession(db.pool, session.sessionId),
-    ).rejects.toBeInstanceOf(SessionNotFoundError);
+    ).rejects.toBeInstanceOf(SessionExpiredError);
   });
 
   it('is idempotent — revoking a non-existent session is not an error', async () => {
