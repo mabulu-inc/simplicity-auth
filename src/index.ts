@@ -43,6 +43,9 @@ export {
   SESSION_VAR_NAMES,
 } from './set-helpers.js';
 
+// Background service context — for Lambdas with no user session.
+export { withServiceContext } from './with-service-context.js';
+
 // Developer OTP — for devs whose phones can't receive Twilio SMS.
 export {
   verifyDevOtp,
