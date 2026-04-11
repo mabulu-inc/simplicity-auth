@@ -1,11 +1,14 @@
 import { InvalidInputError, SessionExpiredError, SessionNotFoundError } from './errors.js';
 import type { Queryable, Session } from './types.js';
 
+const TS_SUFFIX = process.env['USE_AT_FOR_TIMESTAMPS'] !== 'false' ? '_at' : '';
+const CREATED_COL = `created${TS_SUFFIX}`;
+
 const SELECT_SESSION = `
   SELECT
     s.session_id  AS "sessionId",
     ucm.user_id   AS "userId",
-    s.created_at  AS "createdAt",
+    s.${CREATED_COL}  AS "createdAt",
     s.expires_at  AS "expiresAt"
   FROM sessions s
   JOIN user_communication_methods ucm

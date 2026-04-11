@@ -2,6 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { InvalidInputError } from './errors.js';
 import type { CreateSessionInput, Queryable, Session } from './types.js';
 
+const TS_SUFFIX = process.env['USE_AT_FOR_TIMESTAMPS'] !== 'false' ? '_at' : '';
+const CREATED_COL = `created${TS_SUFFIX}`;
+
 const INSERT_SESSION = `
   INSERT INTO sessions (
     session_id,
@@ -28,7 +31,7 @@ const INSERT_SESSION = `
   RETURNING
     session_id    AS "sessionId",
     user_communication_method_id AS "_userCommunicationMethodId",
-    created_at    AS "createdAt",
+    ${CREATED_COL}    AS "createdAt",
     expires_at    AS "expiresAt"
 `;
 
