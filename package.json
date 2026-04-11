@@ -52,7 +52,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "release": "release-it"
+    "release": "GITHUB_TOKEN=$(gh auth token) release-it --ci"
   },
   "peerDependencies": {
     "pg": ">=8.0.0"
