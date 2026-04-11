@@ -1,0 +1,15 @@
+{
+  "git": {
+    "requireCleanWorkingDir": true,
+    "requireUpstream": true,
+    "commitMessage": "Release v${version}",
+    "tagName": "v${version}"
+  },
+  "github": {
+    "release": true,
+    "autoGenerate": true
+  },
+  "npm": {
+    "publish": false
+  }
+}
