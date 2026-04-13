@@ -4,7 +4,7 @@ columns:
     type: serial
     primary_key: true
   - name: name
-    type: text
+    type: varchar(30)
     nullable: false
 unique_constraints:
   - columns: [name]
