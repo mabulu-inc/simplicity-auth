@@ -31,44 +31,20 @@ import { withTransaction } from './with-transaction.js';
  * role the user has, not just the one being requested. The `_hasRole`
  * column tells us whether the requested role specifically was found.
  */
+/**
+ * Uses the resolve_session() SECURITY DEFINER function so the query
+ * bypasses RLS on auth tables (user_communication_methods, user_roles).
+ * This lets app_user resolve sessions without needing GUCs set first.
+ */
 const RESOLVE_SESSION = `
-  WITH found_session AS (
-    SELECT
-      s.session_id,
-      s.expires_at,
-      ucm.user_id
-    FROM sessions s
-    JOIN user_communication_methods ucm
-      ON ucm.user_communication_method_id = s.user_communication_method_id
-    WHERE s.session_id = $1
-  ),
-  user_role_data AS (
-    SELECT
-      ur.user_id,
-      ur.tenant_id,
-      r.name AS role_name
-    FROM found_session fs
-    JOIN user_roles ur ON ur.user_id = fs.user_id
-    JOIN roles r ON r.role_id = ur.role_id
-  )
   SELECT
-    fs.user_id    AS "userId",
-    fs.expires_at AS "expiresAt",
-    COALESCE(
-      array_agg(DISTINCT urd.tenant_id)
-        FILTER (WHERE urd.tenant_id IS NOT NULL),
-      '{}'
-    ) AS "tenantIds",
-    COALESCE(bool_or(urd.tenant_id IS NULL), false) AS "allTenants",
-    COALESCE(
-      array_agg(DISTINCT urd.role_name)
-        FILTER (WHERE urd.role_name IS NOT NULL),
-      '{}'
-    ) AS "roles",
-    bool_or(urd.role_name = $2) AS "hasRequestedRole"
-  FROM found_session fs
-  LEFT JOIN user_role_data urd ON urd.user_id = fs.user_id
-  GROUP BY fs.user_id, fs.expires_at
+    user_id    AS "userId",
+    expires_at AS "expiresAt",
+    tenant_ids AS "tenantIds",
+    all_tenants AS "allTenants",
+    roles      AS "roles",
+    has_requested_role AS "hasRequestedRole"
+  FROM resolve_session($1, $2)
 `;
 
 interface ResolvedRow {

@@ -20,7 +20,7 @@ const TEST_SEED_PATH = path.join(TEST_FIXTURES_DIR, 'seed-test-data.sql');
  */
 async function loadShippedSchemaFiles(): Promise<Record<string, string>> {
   const out: Record<string, string> = {};
-  for (const subdir of ['tables', 'post']) {
+  for (const subdir of ['tables', 'functions', 'post']) {
     const dir = path.join(SHIPPED_SCHEMA_DIR, subdir);
     let entries: string[];
     try {

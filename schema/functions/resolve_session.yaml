@@ -1,0 +1,48 @@
+name: resolve_session
+language: plpgsql
+volatility: stable
+security: definer
+returns: TABLE(user_id integer, expires_at timestamptz, tenant_ids integer[], all_tenants boolean, roles text[], has_requested_role boolean)
+args:
+  - name: p_session_id
+    type: text
+  - name: p_role_name
+    type: text
+body: |
+  BEGIN
+    RETURN QUERY
+    WITH found_session AS (
+      SELECT s.session_id, s.expires_at, ucm.user_id
+      FROM sessions s
+      JOIN user_communication_methods ucm
+        ON ucm.user_communication_method_id = s.user_communication_method_id
+      WHERE s.session_id = p_session_id
+    ),
+    user_role_data AS (
+      SELECT ur.user_id, ur.tenant_id, r.name AS role_name
+      FROM found_session fs
+      JOIN user_roles ur ON ur.user_id = fs.user_id
+      JOIN roles r ON r.role_id = ur.role_id
+    )
+    SELECT
+      fs.user_id,
+      fs.expires_at,
+      COALESCE(
+        array_agg(DISTINCT urd.tenant_id) FILTER (WHERE urd.tenant_id IS NOT NULL),
+        '{}'::integer[]
+      ),
+      COALESCE(bool_or(urd.tenant_id IS NULL), false),
+      COALESCE(
+        array_agg(DISTINCT urd.role_name) FILTER (WHERE urd.role_name IS NOT NULL),
+        '{}'::text[]
+      ),
+      bool_or(urd.role_name = p_role_name)
+    FROM found_session fs
+    LEFT JOIN user_role_data urd ON urd.user_id = fs.user_id
+    GROUP BY fs.user_id, fs.expires_at;
+  END;
+comment: >
+  SECURITY DEFINER function for resolving sessions without requiring
+  RLS GUCs to be set first. Called by withSession so app_user can
+  look up session → user → roles through RLS-protected tables.
+  Returns aggregate role/tenant info only — does not expose raw PII.
