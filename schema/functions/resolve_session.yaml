@@ -2,7 +2,7 @@ name: resolve_session
 language: plpgsql
 volatility: stable
 security: definer
-returns: TABLE(user_id integer, expires_at timestamptz, tenant_ids integer[], all_tenants boolean, roles text[], has_requested_role boolean)
+returns: TABLE(user_id integer, expires_at timestamptz, tenant_ids integer[], all_tenants boolean, roles varchar[], has_requested_role boolean)
 args:
   - name: p_session_id
     type: text
