@@ -51,8 +51,21 @@ jobs:
         uses: actions/checkout@v6
         with:
           # Full git history so the gitleaks step below can scan
-          # every commit, not just the release tree.
+          # every commit, not just the release tree, and so the
+          # "tag on main" ancestry check below can walk the graph.
           fetch-depth: 0
+
+      # Refuse to publish unless the release tag's commit is reachable
+      # from main. Catches accidental release-it runs from a feature
+      # branch before it's merged — npm gets a clean, main-derived
+      # release, never a dangling-branch one.
+      - name: Refuse to publish if tag isn't on main
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "${{ github.sha }}" origin/main; then
+            echo "::error::Tag ${{ github.ref_name }} (commit ${{ github.sha }}) is not reachable from main. Refusing to publish. Re-run the release from main."
+            exit 1
+          fi
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v5
