@@ -95,9 +95,14 @@ app.actor_id }` so the `created_by`/`updated_by` FKs target auth's `users` and t
 
 Functions (auth's own, bound to its tables):
 
-- **resolve_session(token_hash, role_name)** — SECURITY DEFINER (bypasses RLS on
-  auth tables). Returns `{ user_id, expires_at, roles[], privileges[],
-has_requested_role }` (roles split from privileges by `is_privilege`).
+- **resolve_session(token_hash)** — SECURITY DEFINER (bypasses RLS on auth
+  tables). A **pure resolver**: returns `{ user_id, expires_at, roles[],
+privileges[] }` (roles split from privileges by `is_privilege`; each role
+  carries `is_default`). It takes no role argument and validates nothing —
+  role **selection and validation live in `withSession`** (TS), so the
+  SECURITY DEFINER surface stays a minimal read. `has_requested_role` is gone:
+  it was derivable from `roles[]` (`role_name ∈ roles`), so the caller derives
+  it instead of the function recomputing it.
 - **current_user_id()** — reads `app.actor_id`. App RLS/scope functions key on it.
 
 (`audit_stamp`/`audit_diff`/`audit_skip_noop` are **not** auth's — they ship,
@@ -155,21 +160,32 @@ against the app's scope tables).
 
 - Opaque random token returned to the client; only its **hash** is stored.
 - `createSession` / `validateSession` / `revokeSession(token)` /
-  `revokeUserSessions(userId)` / `touchSession` (activity).
+  `revokeUserSessions(userId)` / `revokeTenantSessions(tenantId)` /
+  `touchSession` (activity).
 - Expiry is server-side; revoke = `expires_at = now()` (row kept for audit).
 - **Role/privilege change → immediate**, free: resolved per request.
-- **Tenant-wide sign-off**: the app computes "which users are in tenant X" (its
-  scope domain) and calls `revokeUserSessions` for them. (`sessions` belong to a
-  user, not a tenant — tenant membership is the app's domain.)
+- **Tenant-wide sign-off**: `revokeTenantSessions(tenantId)` ships in the
+  library. **Tenant membership is in the contract** — it's `user_roles.tenant_id`
+  (a library table), not an app-owned concept — so the library resolves "which
+  users are in tenant X" itself and revokes their sessions. (A session still
+  belongs to a _user_; the library joins user→user_roles→tenant to fan out. There
+  is **no** separate `user_tenants` table — `user_roles` is the membership.)
+  Only users **explicitly** in the tenant are revoked: the match is
+  `user_roles.tenant_id = tenantId`, **not** `tenant_id IS NULL`. Wildcard
+  members (NULL = all-tenants: global admins, service principals) are _not_ a
+  member of any one tenant, so a single tenant's sign-off must not sign them out.
 
 ## Request flow
 
 ```ts
-withSession(pool, { token, roleName }, fn, { scope?, handlers? })
+withSession(pool, { token, roleName? }, fn, { scope?, handlers? })
 // = @smplcty/db withTransaction
-//   → resolve_session(hash(token), roleName)
-//   → validate (not-found / expired / role-not-held)
-//   → set identity GUCs (actor_id, session_id, active_role, privileges)
+//   → resolve_session(hash(token))           // pure resolver, no role arg
+//   → validate not-found / expired / revoked
+//   → pick active role: roleName, else the is_default role, else none
+//        (none = privilege-only; not an error)
+//   → if roleName given and not in roles[] → RoleNotHeld
+//   → set identity GUCs (actor_id, session_id, privileges; active_role if any)
 //   → scope hook (app sets scope GUCs, or no-op for function-carried)
 //   → fn(client, ctx)
 
