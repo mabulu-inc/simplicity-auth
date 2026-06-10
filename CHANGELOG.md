@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Maintenance release with no functional or API changes. Internal tooling now
+  formats the codebase with Prettier (enforced on commit) and generates GitHub
+  release notes from this changelog.
+
 ## [0.6.3] - 2026-04-12
 
 Baseline release. Notes for this and earlier versions are on the
