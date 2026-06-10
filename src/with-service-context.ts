@@ -41,18 +41,9 @@ export async function withServiceContext<T>(
 
   const client = await pool.connect();
   try {
-    await client.query(SET_CONFIG_SESSION, [
-      SESSION_VAR_NAMES.sessionId,
-      serviceName,
-    ]);
-    await client.query(SET_CONFIG_SESSION, [
-      SESSION_VAR_NAMES.roleName,
-      'settings',
-    ]);
-    await client.query(SET_CONFIG_SESSION, [
-      SESSION_VAR_NAMES.allTenants,
-      'true',
-    ]);
+    await client.query(SET_CONFIG_SESSION, [SESSION_VAR_NAMES.sessionId, serviceName]);
+    await client.query(SET_CONFIG_SESSION, [SESSION_VAR_NAMES.roleName, 'settings']);
+    await client.query(SET_CONFIG_SESSION, [SESSION_VAR_NAMES.allTenants, 'true']);
     return await fn(client);
   } finally {
     client.release();

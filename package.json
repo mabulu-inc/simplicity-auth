@@ -49,13 +49,25 @@
     "build": "tsc -p tsconfig.build.json",
     "clean": "rm -rf dist",
     "lint": "eslint src tests",
+    "format": "prettier --check .",
+    "format:fix": "prettier --write .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "prepare": "husky",
     "release": "GITHUB_TOKEN=$(gh auth token) release-it",
     "release:patch": "GITHUB_TOKEN=$(gh auth token) release-it patch",
     "release:minor": "GITHUB_TOKEN=$(gh auth token) release-it minor",
     "release:major": "GITHUB_TOKEN=$(gh auth token) release-it major"
+  },
+  "lint-staged": {
+    "*.{ts,js}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md,yaml,yml}": [
+      "prettier --write"
+    ]
   },
   "peerDependencies": {
     "pg": ">=8.0.0"
@@ -67,7 +79,10 @@
     "@types/node": "^25.5.2",
     "@types/pg": "^8.20.0",
     "eslint": "^10.2.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.7",
     "pg": "^8.20.0",
+    "prettier": "^3.8.4",
     "release-it": "^20.2.0",
     "typescript": "^6.0.2",
     "typescript-eslint": "^8.58.1",

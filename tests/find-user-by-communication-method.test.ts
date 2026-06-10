@@ -1,8 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import {
-  findUserByCommunicationMethod,
-  InvalidInputError,
-} from '../src/index.js';
+import { findUserByCommunicationMethod, InvalidInputError } from '../src/index.js';
 import { startTestDb, type TestDb } from './helpers/test-db.js';
 
 describe('findUserByCommunicationMethod', () => {
@@ -42,15 +39,15 @@ describe('findUserByCommunicationMethod', () => {
   });
 
   it('throws InvalidInputError on empty channel', async () => {
-    await expect(
-      findUserByCommunicationMethod(db.pool, { channel: '', code: 'x' }),
-    ).rejects.toBeInstanceOf(InvalidInputError);
+    await expect(findUserByCommunicationMethod(db.pool, { channel: '', code: 'x' })).rejects.toBeInstanceOf(
+      InvalidInputError,
+    );
   });
 
   it('throws InvalidInputError on empty code', async () => {
-    await expect(
-      findUserByCommunicationMethod(db.pool, { channel: 'email', code: '' }),
-    ).rejects.toBeInstanceOf(InvalidInputError);
+    await expect(findUserByCommunicationMethod(db.pool, { channel: 'email', code: '' })).rejects.toBeInstanceOf(
+      InvalidInputError,
+    );
   });
 
   it('parameterizes inputs and is immune to injection attempts', async () => {

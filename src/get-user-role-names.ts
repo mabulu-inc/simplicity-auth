@@ -31,10 +31,7 @@ interface RoleNameRow {
  *
  * @throws {InvalidInputError} If `userId` is not a positive integer.
  */
-export async function getUserRoleNames(
-  db: Queryable,
-  userId: number,
-): Promise<string[]> {
+export async function getUserRoleNames(db: Queryable, userId: number): Promise<string[]> {
   if (!Number.isInteger(userId) || userId <= 0) {
     throw new InvalidInputError('userId must be a positive integer');
   }

@@ -1,9 +1,5 @@
 import { InvalidInputError } from './errors.js';
-import type {
-  FindUserQuery,
-  Queryable,
-  UserByCommunicationMethod,
-} from './types.js';
+import type { FindUserQuery, Queryable, UserByCommunicationMethod } from './types.js';
 
 const SELECT_BY_COMMUNICATION_METHOD = `
   SELECT
@@ -52,9 +48,9 @@ export async function findUserByCommunicationMethod(
     throw new InvalidInputError('query.code must be a non-empty string');
   }
 
-  const { rows } = await db.query<UserByCommunicationMethod>(
-    SELECT_BY_COMMUNICATION_METHOD,
-    [query.channel, query.code],
-  );
+  const { rows } = await db.query<UserByCommunicationMethod>(SELECT_BY_COMMUNICATION_METHOD, [
+    query.channel,
+    query.code,
+  ]);
   return rows[0] ?? null;
 }

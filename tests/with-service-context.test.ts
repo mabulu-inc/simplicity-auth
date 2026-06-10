@@ -14,23 +14,19 @@ describe('withServiceContext', () => {
   });
 
   it('sets session_id, role_name, and all_tenants as session-scoped GUCs', async () => {
-    const gucs = await withServiceContext(
-      db.pool,
-      'test-service',
-      async (client) => {
-        const { rows } = await client.query<{
-          sid: string;
-          role: string;
-          all: string;
-        }>(`
+    const gucs = await withServiceContext(db.pool, 'test-service', async (client) => {
+      const { rows } = await client.query<{
+        sid: string;
+        role: string;
+        all: string;
+      }>(`
           SELECT
             current_setting('app.session_id') AS sid,
             current_setting('app.role_name') AS role,
             current_setting('app.all_tenants') AS "all"
         `);
-        return rows[0]!;
-      },
-    );
+      return rows[0]!;
+    });
 
     expect(gucs.sid).toBe('test-service');
     expect(gucs.role).toBe('settings');
@@ -38,11 +34,7 @@ describe('withServiceContext', () => {
   });
 
   it('returns the callback result', async () => {
-    const result = await withServiceContext(
-      db.pool,
-      'test-service',
-      async () => 42,
-    );
+    const result = await withServiceContext(db.pool, 'test-service', async () => 42);
     expect(result).toBe(42);
   });
 
@@ -58,8 +50,6 @@ describe('withServiceContext', () => {
   });
 
   it('throws InvalidInputError on empty serviceName', async () => {
-    await expect(
-      withServiceContext(db.pool, '', async () => {}),
-    ).rejects.toThrow(InvalidInputError);
+    await expect(withServiceContext(db.pool, '', async () => {})).rejects.toThrow(InvalidInputError);
   });
 });

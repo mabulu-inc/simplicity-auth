@@ -44,11 +44,7 @@ describe('getUserRoleNames', () => {
   });
 
   it('throws InvalidInputError for non-positive userId', async () => {
-    await expect(getUserRoleNames(db.pool, 0)).rejects.toThrow(
-      InvalidInputError,
-    );
-    await expect(getUserRoleNames(db.pool, -1)).rejects.toThrow(
-      InvalidInputError,
-    );
+    await expect(getUserRoleNames(db.pool, 0)).rejects.toThrow(InvalidInputError);
+    await expect(getUserRoleNames(db.pool, -1)).rejects.toThrow(InvalidInputError);
   });
 });

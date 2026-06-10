@@ -30,6 +30,5 @@ export default function setup(): void {
     cwd: import.meta.dirname,
   });
 
-  process.env.DATABASE_URL =
-    'postgresql://postgres:postgres@localhost:54320/postgres';
+  process.env.DATABASE_URL = 'postgresql://postgres:postgres@localhost:54320/postgres';
 }

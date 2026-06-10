@@ -33,9 +33,7 @@ describe('withTransaction', () => {
 
     await expect(
       withTransaction(db.pool, async (client) => {
-        await client.query(
-          `INSERT INTO tenants (name) VALUES ('rollback-canary')`,
-        );
+        await client.query(`INSERT INTO tenants (name) VALUES ('rollback-canary')`);
         throw new Error('boom');
       }),
     ).rejects.toThrow('boom');
@@ -61,16 +59,12 @@ describe('withTransaction', () => {
     // Use set_config inside one transaction and verify it's gone in the next
     await withTransaction(db.pool, async (client) => {
       await client.query(`SELECT set_config('app.session_id', 'leak-test', true)`);
-      const { rows } = await client.query<{ v: string }>(
-        `SELECT current_setting('app.session_id', true) AS v`,
-      );
+      const { rows } = await client.query<{ v: string }>(`SELECT current_setting('app.session_id', true) AS v`);
       expect(rows[0]?.v).toBe('leak-test');
     });
 
     await withTransaction(db.pool, async (client) => {
-      const { rows } = await client.query<{ v: string }>(
-        `SELECT current_setting('app.session_id', true) AS v`,
-      );
+      const { rows } = await client.query<{ v: string }>(`SELECT current_setting('app.session_id', true) AS v`);
       // Setting was transaction-local, so the new transaction sees empty
       expect(rows[0]?.v).toBe('');
     });

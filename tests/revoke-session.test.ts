@@ -1,11 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import {
-  createSession,
-  InvalidInputError,
-  revokeSession,
-  SessionExpiredError,
-  validateSession,
-} from '../src/index.js';
+import { createSession, InvalidInputError, revokeSession, SessionExpiredError, validateSession } from '../src/index.js';
 import { startTestDb, type TestDb } from './helpers/test-db.js';
 
 describe('revokeSession', () => {
@@ -46,15 +40,11 @@ describe('revokeSession', () => {
     // Sanity: it's valid
     await validateSession(db.pool, session.sessionId);
     await revokeSession(db.pool, session.sessionId);
-    await expect(
-      validateSession(db.pool, session.sessionId),
-    ).rejects.toBeInstanceOf(SessionExpiredError);
+    await expect(validateSession(db.pool, session.sessionId)).rejects.toBeInstanceOf(SessionExpiredError);
   });
 
   it('is idempotent — revoking a non-existent session is not an error', async () => {
-    await expect(
-      revokeSession(db.pool, '00000000-0000-0000-0000-000000000000'),
-    ).resolves.toBeUndefined();
+    await expect(revokeSession(db.pool, '00000000-0000-0000-0000-000000000000')).resolves.toBeUndefined();
   });
 
   it('is idempotent — double-revoke is not an error', async () => {
@@ -63,14 +53,10 @@ describe('revokeSession', () => {
       ttl: '1 day',
     });
     await revokeSession(db.pool, session.sessionId);
-    await expect(
-      revokeSession(db.pool, session.sessionId),
-    ).resolves.toBeUndefined();
+    await expect(revokeSession(db.pool, session.sessionId)).resolves.toBeUndefined();
   });
 
   it('throws InvalidInputError on empty sessionId', async () => {
-    await expect(revokeSession(db.pool, '')).rejects.toBeInstanceOf(
-      InvalidInputError,
-    );
+    await expect(revokeSession(db.pool, '')).rejects.toBeInstanceOf(InvalidInputError);
   });
 });

@@ -81,40 +81,32 @@ describe('withSession', () => {
       ttl: '1 hour',
     });
 
-    await withSession(
-      db.pool,
-      { sessionId: session.sessionId, roleName: 'user' },
-      async (client) => {
-        const { rows } = await client.query<{
-          s: string;
-          r: string;
-          t: string;
-          a: string;
-        }>(
-          `SELECT
+    await withSession(db.pool, { sessionId: session.sessionId, roleName: 'user' }, async (client) => {
+      const { rows } = await client.query<{
+        s: string;
+        r: string;
+        t: string;
+        a: string;
+      }>(
+        `SELECT
             current_setting('app.session_id', true) AS s,
             current_setting('app.role_name', true)  AS r,
             current_setting('app.tenant_ids', true) AS t,
             current_setting('app.all_tenants', true) AS a`,
-        );
-        expect(rows[0]?.s).toBe(session.sessionId);
-        expect(rows[0]?.r).toBe('user');
-        expect(rows[0]?.t).toBe('1');
-        expect(rows[0]?.a).toBe('false');
-      },
-    );
+      );
+      expect(rows[0]?.s).toBe(session.sessionId);
+      expect(rows[0]?.r).toBe('user');
+      expect(rows[0]?.t).toBe('1');
+      expect(rows[0]?.a).toBe('false');
+    });
   });
 
   it('throws SessionNotFoundError before invoking fn for unknown session', async () => {
     let called = false;
     await expect(
-      withSession(
-        db.pool,
-        { sessionId: '00000000-0000-0000-0000-000000000000', roleName: 'user' },
-        async () => {
-          called = true;
-        },
-      ),
+      withSession(db.pool, { sessionId: '00000000-0000-0000-0000-000000000000', roleName: 'user' }, async () => {
+        called = true;
+      }),
     ).rejects.toBeInstanceOf(SessionNotFoundError);
     expect(called).toBe(false);
   });
@@ -124,16 +116,11 @@ describe('withSession', () => {
       userCommunicationMethodId: 1,
       ttl: '1 hour',
     });
-    await db.pool.query(
-      `UPDATE sessions SET expires_at = now() - interval '1 minute' WHERE session_id = $1`,
-      [session.sessionId],
-    );
+    await db.pool.query(`UPDATE sessions SET expires_at = now() - interval '1 minute' WHERE session_id = $1`, [
+      session.sessionId,
+    ]);
     await expect(
-      withSession(
-        db.pool,
-        { sessionId: session.sessionId, roleName: 'user' },
-        async () => 'never reached',
-      ),
+      withSession(db.pool, { sessionId: session.sessionId, roleName: 'user' }, async () => 'never reached'),
     ).rejects.toBeInstanceOf(SessionExpiredError);
   });
 
@@ -144,11 +131,7 @@ describe('withSession', () => {
     });
     // Alice has 'user' but not 'settings'
     await expect(
-      withSession(
-        db.pool,
-        { sessionId: session.sessionId, roleName: 'settings' },
-        async () => 'never reached',
-      ),
+      withSession(db.pool, { sessionId: session.sessionId, roleName: 'settings' }, async () => 'never reached'),
     ).rejects.toBeInstanceOf(RoleNotAssignedError);
   });
 
@@ -158,16 +141,10 @@ describe('withSession', () => {
       ttl: '1 hour',
     });
     await expect(
-      withSession(
-        db.pool,
-        { sessionId: session.sessionId, roleName: 'user' },
-        async (client) => {
-          await client.query(
-            `INSERT INTO tenants (name) VALUES ('with-session-rollback')`,
-          );
-          throw new Error('boom');
-        },
-      ),
+      withSession(db.pool, { sessionId: session.sessionId, roleName: 'user' }, async (client) => {
+        await client.query(`INSERT INTO tenants (name) VALUES ('with-session-rollback')`);
+        throw new Error('boom');
+      }),
     ).rejects.toThrow('boom');
 
     const { rows } = await db.pool.query<{ n: number }>(
@@ -187,11 +164,7 @@ describe('withSession', () => {
       max: 1,
     });
     try {
-      await withSession(
-        pool,
-        { sessionId: session.sessionId, roleName: 'user' },
-        async () => {},
-      );
+      await withSession(pool, { sessionId: session.sessionId, roleName: 'user' }, async () => {});
 
       // Now use the same connection for a non-withSession query
       const client = await pool.connect();
@@ -222,11 +195,9 @@ describe('withSession', () => {
       userCommunicationMethodId: 1,
       ttl: '1 hour',
     });
-    const value = await withSession(
-      db.pool,
-      { sessionId: session.sessionId, roleName: 'user' },
-      async () => ({ answer: 42 }),
-    );
+    const value = await withSession(db.pool, { sessionId: session.sessionId, roleName: 'user' }, async () => ({
+      answer: 42,
+    }));
     expect(value).toEqual({ answer: 42 });
   });
 });

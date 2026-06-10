@@ -32,27 +32,23 @@ The default API. Hand it a pool, an authenticated session, and a callback. It ch
 ```ts
 import { withSession } from '@smplcty/auth';
 
-const widgets = await withSession(
-  pool,
-  { sessionId, roleName: 'user' },
-  async (client, ctx) => {
-    // ctx = { userId, tenantIds, allTenants, roles }
-    const { rows } = await client.query('SELECT * FROM widgets');
-    return rows;
-  }
-);
+const widgets = await withSession(pool, { sessionId, roleName: 'user' }, async (client, ctx) => {
+  // ctx = { userId, tenantIds, allTenants, roles }
+  const { rows } = await client.query('SELECT * FROM widgets');
+  return rows;
+});
 ```
 
 If the session doesn't exist, is expired, or the user doesn't have the requested role, `withSession` throws **before** your callback runs. Your code never sees an invalid context.
 
 ### Errors thrown by `withSession`
 
-| Error | When |
-|---|---|
-| `SessionNotFoundError` | sessionId doesn't match any row |
-| `SessionExpiredError` | session row exists but `expires_at` has passed |
-| `RoleNotAssignedError` | user does not have the requested role |
-| `InvalidInputError` | sessionId or roleName is empty / wrong type |
+| Error                  | When                                           |
+| ---------------------- | ---------------------------------------------- |
+| `SessionNotFoundError` | sessionId doesn't match any row                |
+| `SessionExpiredError`  | session row exists but `expires_at` has passed |
+| `RoleNotAssignedError` | user does not have the requested role          |
+| `InvalidInputError`    | sessionId or roleName is empty / wrong type    |
 
 All errors extend `AuthError` and have a `code` property:
 
@@ -72,13 +68,7 @@ try {
 For migrating existing code that has its own session-extraction logic, or for tests, or for any case where you need more control than `withSession` gives you.
 
 ```ts
-import {
-  withTransaction,
-  setSessionId,
-  setRoleName,
-  setTenantIds,
-  setAllTenants,
-} from '@smplcty/auth';
+import { withTransaction, setSessionId, setRoleName, setTenantIds, setAllTenants } from '@smplcty/auth';
 
 await withTransaction(pool, async (client) => {
   await setSessionId(client, sessionId);
@@ -191,7 +181,9 @@ When a user is enrolled in dev OTP, you don't need to send them an SMS at all �
 import { findUserByCommunicationMethod, isDevOtpEnrolled } from '@smplcty/auth';
 import { createTwilioVerifyClient } from '@smplcty/twilio';
 
-const twilio = createTwilioVerifyClient({ /* ... */ });
+const twilio = createTwilioVerifyClient({
+  /* ... */
+});
 
 // Sign-in send handler:
 const lookup = await findUserByCommunicationMethod(db, { channel: 'phone', code: phone });
@@ -219,7 +211,9 @@ return ok();
 import { verifyDevOtp, createSession, findUserByCommunicationMethod } from '@smplcty/auth';
 import { createTwilioVerifyClient } from '@smplcty/twilio';
 
-const twilio = createTwilioVerifyClient({ /* ... */ });
+const twilio = createTwilioVerifyClient({
+  /* ... */
+});
 
 // Sign-in verify handler:
 const lookup = await findUserByCommunicationMethod(db, { channel: 'phone', code: phone });
@@ -245,6 +239,7 @@ return badRequest('Invalid code');
 ```
 
 `verifyDevOtp` returns `false` (does not throw) when:
+
 - The user has no row in `dev_otp_enrollments`
 - The submitted code doesn't match a TOTP for the stored secret within the ±30s tolerance window
 - The stored secret is malformed (caught and treated as a non-match)
@@ -262,8 +257,8 @@ There's no shipped CLI — at the team sizes this library is designed for, manua
 import { generateDevOtpSecret, getDevOtpEnrollmentUri } from '@smplcty/auth';
 import qrcode from 'qrcode'; // pnpm add -D qrcode
 
-const phone = process.argv[2];     // e.g. '+15558675309'
-const label = process.argv[3];     // e.g. 'sam@salez1.com'
+const phone = process.argv[2]; // e.g. '+15558675309'
+const label = process.argv[3]; // e.g. 'sam@salez1.com'
 const issuer = 'Salez1';
 
 const secret = generateDevOtpSecret();
@@ -302,14 +297,14 @@ The next sign-in-verify call for that user will fall through to Twilio as if the
 
 Earlier versions of this codebase used a `DEV_PHONE_NUMBERS` + `DEV_VERIFICATION_CODE` env var pair where any dev phone, when paired with the magic env var code, bypassed Twilio. That design has several problems: a single static secret shared across all devs, no per-dev revocation, no audit trail, and the bypass mechanism baked into the source code as a recipe for "how to sign in without OTP." Per-dev TOTP fixes all of these:
 
-| Concern | Shared bypass code | Per-dev TOTP |
-|---|---|---|
-| Secret leak blast radius | Every dev account compromised | One dev account |
-| Per-dev revocation | Rotate the shared secret + everyone re-syncs | Delete one row |
-| Audit trail | None | `last_used_at` + `used_count` per enrollment |
-| Brute-force resistance | 6-digit space, no rotation | 6-digit space, rotates every 30s |
-| Source-code visible | Shared secret + bypass logic | Just the verification code path; secrets are per-dev in the DB |
-| Possession factor | Just env var knowledge | Authenticator app on a specific device |
+| Concern                  | Shared bypass code                           | Per-dev TOTP                                                   |
+| ------------------------ | -------------------------------------------- | -------------------------------------------------------------- |
+| Secret leak blast radius | Every dev account compromised                | One dev account                                                |
+| Per-dev revocation       | Rotate the shared secret + everyone re-syncs | Delete one row                                                 |
+| Audit trail              | None                                         | `last_used_at` + `used_count` per enrollment                   |
+| Brute-force resistance   | 6-digit space, no rotation                   | 6-digit space, rotates every 30s                               |
+| Source-code visible      | Shared secret + bypass logic                 | Just the verification code path; secrets are per-dev in the DB |
+| Possession factor        | Just env var knowledge                       | Authenticator app on a specific device                         |
 
 ## Typed roles
 
@@ -360,12 +355,7 @@ import pino from 'pino';
 
 const logger = pino({ redact: ['*.sessionId', 'headers.authorization'] });
 
-await withSession(
-  pool,
-  { sessionId, roleName: 'user' },
-  fn,
-  { logger }
-);
+await withSession(pool, { sessionId, roleName: 'user' }, fn, { logger });
 ```
 
 The `Logger` interface matches pino's structured-logging shape (`(data, msg)`), so you can pass a pino logger directly with no adapter. The library never logs the session ID or any PII; it logs structural events like `'session validated'` with non-sensitive identifiers like `userId` and a hash prefix of the session ID.
@@ -468,12 +458,12 @@ The DDL above is kept in sync with the shipped YAML files by hand. If you're par
 
 The library also expects four custom Postgres session variables to be readable from your RLS policies:
 
-| GUC | Set by | Type |
-|---|---|---|
-| `app.session_id` | `setSessionId` / `setSessionContext` / `withSession` | text |
-| `app.role_name` | `setRoleName` / `setSessionContext` / `withSession` | text |
-| `app.tenant_ids` | `setTenantIds` / `setSessionContext` / `withSession` | comma-separated text (parsed into int[] in policies) |
-| `app.all_tenants` | `setAllTenants` / `setSessionContext` / `withSession` | text `'true'` or `'false'` |
+| GUC               | Set by                                                | Type                                                 |
+| ----------------- | ----------------------------------------------------- | ---------------------------------------------------- |
+| `app.session_id`  | `setSessionId` / `setSessionContext` / `withSession`  | text                                                 |
+| `app.role_name`   | `setRoleName` / `setSessionContext` / `withSession`   | text                                                 |
+| `app.tenant_ids`  | `setTenantIds` / `setSessionContext` / `withSession`  | comma-separated text (parsed into int[] in policies) |
+| `app.all_tenants` | `setAllTenants` / `setSessionContext` / `withSession` | text `'true'` or `'false'`                           |
 
 These are set with **transaction scope** (`set_config(name, value, true)`) and discarded automatically on COMMIT or ROLLBACK.
 

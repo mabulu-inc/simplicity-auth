@@ -27,10 +27,7 @@ const EXPIRE_SESSION = `
  *
  * @throws {InvalidInputError} If `sessionId` is not a non-empty string.
  */
-export async function revokeSession(
-  db: Queryable,
-  sessionId: string,
-): Promise<void> {
+export async function revokeSession(db: Queryable, sessionId: string): Promise<void> {
   if (typeof sessionId !== 'string' || sessionId.length === 0) {
     throw new InvalidInputError('sessionId must be a non-empty string');
   }

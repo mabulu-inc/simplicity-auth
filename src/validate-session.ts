@@ -33,10 +33,7 @@ const SELECT_SESSION = `
  * @throws {SessionNotFoundError}  If no row matches `sessionId`.
  * @throws {SessionExpiredError}   If the session row exists but `expires_at` has passed.
  */
-export async function validateSession(
-  db: Queryable,
-  sessionId: string,
-): Promise<Session> {
+export async function validateSession(db: Queryable, sessionId: string): Promise<Session> {
   if (typeof sessionId !== 'string' || sessionId.length === 0) {
     throw new InvalidInputError('sessionId must be a non-empty string');
   }

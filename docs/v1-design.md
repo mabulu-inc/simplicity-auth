@@ -88,7 +88,7 @@ All PKs `{singular}_id`. Auditable tables include the `audit` mixin.
 
 Mixins: auth's auditable tables use the **`audit`** mixin — but `audit` (and
 `soft_delete`, `audit_log`) are **generic, not auth's**: they live in
-`@smplcty/schema-std` and auth *consumes* them (see "Package boundary" below).
+`@smplcty/schema-std` and auth _consumes_ them (see "Package boundary" below).
 Auth imports `schema-std` with `{ user_table: users, user_pk: user_id, actor_guc:
 app.actor_id }` so the `created_by`/`updated_by` FKs target auth's `users` and the
 `audit_stamp` trigger reads `app.actor_id`.
@@ -97,7 +97,7 @@ Functions (auth's own, bound to its tables):
 
 - **resolve_session(token_hash, role_name)** — SECURITY DEFINER (bypasses RLS on
   auth tables). Returns `{ user_id, expires_at, roles[], privileges[],
-  has_requested_role }` (roles split from privileges by `is_privilege`).
+has_requested_role }` (roles split from privileges by `is_privilege`).
 - **current_user_id()** — reads `app.actor_id`. App RLS/scope functions key on it.
 
 (`audit_stamp`/`audit_diff`/`audit_skip_noop` are **not** auth's — they ship,
@@ -113,7 +113,7 @@ generic schema from a shared package.**
 
 - **Own-domain schema → the package provides it.** The identity/tenant/federation
   tables (`users`, `sessions`, `roles`, `user_roles`, communication,
-  `auth_domains`) *are* auth's domain, so `@smplcty/auth` provides them — that's
+  `auth_domains`) _are_ auth's domain, so `@smplcty/auth` provides them — that's
   not a concern leak, it's auth owning its data model. Its table-bound functions
   (`resolve_session`, `current_user_id`) ship with them.
 - **Generic / cross-cutting schema → consumed from `@smplcty/schema-std`.**
@@ -132,7 +132,7 @@ identity-schema package would buy only "auth-logic over a foreign identity
 schema" — which no real consumer needs — at the cost of a rich, fragile
 cross-package contract. Schema (`schema/`) and logic (`src/`) live in the **one**
 `@smplcty/auth` package, consumed separately (schema-flow `imports` vs TS
-`import`). Extract an identity-schema package *only if* such a consumer actually
+`import`). Extract an identity-schema package _only if_ such a consumer actually
 appears, behind a narrow function contract — not speculatively.
 
 ## Identity GUC contract (the only GUCs the library sets)
@@ -204,7 +204,8 @@ handler; if no org config, fall back to the default user-bound method.
 
 Handlers are **opt-in / injected** so the core has no `twilio`/`oidc`/`jose`
 deps; a password-only app pulls none. OIDC **provisioning** (auto-create the user
-+ email method + default roles for the tenant) is driven by `auth_domains` policy.
+
+- email method + default roles for the tenant) is driven by `auth_domains` policy.
 
 ## Axis 2 — authorization scope (app-owned)
 
@@ -262,7 +263,7 @@ they are not rolled in. Rationale:
 - **Coupling test:** both are stateless third-party-protocol wrappers with zero
   dependency on auth's domain (`users`/`sessions`/`auth_domains`) — the same
   category as `@smplcty/db`. Uncoupled generic utilities stay their own focused
-  packages; only the auth-domain *glue* lives in auth.
+  packages; only the auth-domain _glue_ lives in auth.
 - **Consistency:** `@smplcty/oidc` and `@smplcty/twilio` are the same kind of
   thing and are treated identically. (Rolling either in but not the other is
   arbitrary; rolling both in drags `jose` + the Twilio HTTP wrapper into auth's
@@ -270,7 +271,7 @@ they are not rolled in. Rationale:
 - **Opt-in is preserved without absorbing them:** the auth-domain glue ships as
   **opt-in auth subpaths** — `@smplcty/auth/oidc` (the `OidcHandler`) and
   `@smplcty/auth/twilio` (the `TwilioVerifyHandler`) — each depending on its
-  protocol lib as an **optional peer**. Auth *core* pulls neither `jose` nor
+  protocol lib as an **optional peer**. Auth _core_ pulls neither `jose` nor
   twilio. An app enables a method by installing the protocol lib and importing
   the handler subpath. This was considered against rolling the protocol packages
   in and chosen deliberately.

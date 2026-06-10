@@ -1,8 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import {
-  createSession,
-  InvalidInputError,
-} from '../src/index.js';
+import { createSession, InvalidInputError } from '../src/index.js';
 import { startTestDb, type TestDb } from './helpers/test-db.js';
 
 describe('createSession', () => {
@@ -26,16 +23,12 @@ describe('createSession', () => {
       ttl: '30 days',
     });
 
-    expect(session.sessionId).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
-    );
+    expect(session.sessionId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     expect(session.userId).toBe(1);
     expect(session.createdAt).toBeInstanceOf(Date);
     expect(session.expiresAt).toBeInstanceOf(Date);
     // expiresAt should be ~30 days in the future
-    const days =
-      (session.expiresAt.getTime() - session.createdAt.getTime()) /
-      (24 * 60 * 60 * 1000);
+    const days = (session.expiresAt.getTime() - session.createdAt.getTime()) / (24 * 60 * 60 * 1000);
     expect(days).toBeGreaterThan(29.9);
     expect(days).toBeLessThan(30.1);
   });

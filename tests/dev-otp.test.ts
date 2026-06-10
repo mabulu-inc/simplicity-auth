@@ -99,9 +99,7 @@ describe('verifyDevOtp', () => {
   });
 
   it('throws InvalidInputError on bad userCommunicationMethodId', async () => {
-    await expect(
-      verifyDevOtp(db.pool, -1, '123456'),
-    ).rejects.toBeInstanceOf(InvalidInputError);
+    await expect(verifyDevOtp(db.pool, -1, '123456')).rejects.toBeInstanceOf(InvalidInputError);
     await expect(
       // @ts-expect-error testing runtime validation
       verifyDevOtp(db.pool, 'one', '123456'),
@@ -109,9 +107,7 @@ describe('verifyDevOtp', () => {
   });
 
   it('throws InvalidInputError on empty/non-string code', async () => {
-    await expect(
-      verifyDevOtp(db.pool, ALICE_UCM_ID, ''),
-    ).rejects.toBeInstanceOf(InvalidInputError);
+    await expect(verifyDevOtp(db.pool, ALICE_UCM_ID, '')).rejects.toBeInstanceOf(InvalidInputError);
     await expect(
       // @ts-expect-error testing runtime validation
       verifyDevOtp(db.pool, ALICE_UCM_ID, 123456),
@@ -145,9 +141,7 @@ describe('verifyDevOtp', () => {
     const ok = await verifyDevOtp(db.pool, ALICE_UCM_ID, malicious);
     expect(ok).toBe(false);
     // Confirm table still exists
-    const { rows } = await db.pool.query(
-      `SELECT to_regclass('dev_otp_enrollments') AS exists`,
-    );
+    const { rows } = await db.pool.query(`SELECT to_regclass('dev_otp_enrollments') AS exists`);
     expect(rows[0]?.exists).toBe('dev_otp_enrollments');
   });
 });
@@ -179,9 +173,7 @@ describe('isDevOtpEnrolled', () => {
   });
 
   it('throws InvalidInputError on bad userCommunicationMethodId', async () => {
-    await expect(isDevOtpEnrolled(db.pool, -1)).rejects.toBeInstanceOf(
-      InvalidInputError,
-    );
+    await expect(isDevOtpEnrolled(db.pool, -1)).rejects.toBeInstanceOf(InvalidInputError);
     await expect(
       // @ts-expect-error testing runtime validation
       isDevOtpEnrolled(db.pool, 'one'),
@@ -203,14 +195,8 @@ describe('getDevOtpEnrollmentUri', () => {
   });
 
   it('throws InvalidInputError on missing fields', () => {
-    expect(() =>
-      getDevOtpEnrollmentUri({ secret: '', label: 'x', issuer: 'y' }),
-    ).toThrow(InvalidInputError);
-    expect(() =>
-      getDevOtpEnrollmentUri({ secret: 'x', label: '', issuer: 'y' }),
-    ).toThrow(InvalidInputError);
-    expect(() =>
-      getDevOtpEnrollmentUri({ secret: 'x', label: 'y', issuer: '' }),
-    ).toThrow(InvalidInputError);
+    expect(() => getDevOtpEnrollmentUri({ secret: '', label: 'x', issuer: 'y' })).toThrow(InvalidInputError);
+    expect(() => getDevOtpEnrollmentUri({ secret: 'x', label: '', issuer: 'y' })).toThrow(InvalidInputError);
+    expect(() => getDevOtpEnrollmentUri({ secret: 'x', label: 'y', issuer: '' })).toThrow(InvalidInputError);
   });
 });

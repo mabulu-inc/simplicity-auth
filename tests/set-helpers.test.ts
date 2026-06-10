@@ -28,24 +28,18 @@ describe('set helpers', () => {
 
       await withTransaction(db.pool, async (client) => {
         await setSessionId(client, malicious);
-        const { rows } = await client.query<{ v: string }>(
-          `SELECT current_setting('app.session_id', true) AS v`,
-        );
+        const { rows } = await client.query<{ v: string }>(`SELECT current_setting('app.session_id', true) AS v`);
         expect(rows[0]?.v).toBe(malicious);
       });
 
       // Confirm sessions table is intact
-      const { rows } = await db.pool.query(
-        `SELECT to_regclass('sessions') AS exists`,
-      );
+      const { rows } = await db.pool.query(`SELECT to_regclass('sessions') AS exists`);
       expect(rows[0]?.exists).toBe('sessions');
     });
 
     it('throws InvalidInputError on empty input', async () => {
       await withTransaction(db.pool, async (client) => {
-        await expect(setSessionId(client, '')).rejects.toBeInstanceOf(
-          InvalidInputError,
-        );
+        await expect(setSessionId(client, '')).rejects.toBeInstanceOf(InvalidInputError);
       });
     });
 
@@ -64,22 +58,16 @@ describe('set helpers', () => {
       const malicious = '$$; DROP TABLE roles; --';
       await withTransaction(db.pool, async (client) => {
         await setRoleName(client, malicious);
-        const { rows } = await client.query<{ v: string }>(
-          `SELECT current_setting('app.role_name', true) AS v`,
-        );
+        const { rows } = await client.query<{ v: string }>(`SELECT current_setting('app.role_name', true) AS v`);
         expect(rows[0]?.v).toBe(malicious);
       });
-      const { rows } = await db.pool.query(
-        `SELECT to_regclass('roles') AS exists`,
-      );
+      const { rows } = await db.pool.query(`SELECT to_regclass('roles') AS exists`);
       expect(rows[0]?.exists).toBe('roles');
     });
 
     it('rejects empty role name', async () => {
       await withTransaction(db.pool, async (client) => {
-        await expect(setRoleName(client, '')).rejects.toBeInstanceOf(
-          InvalidInputError,
-        );
+        await expect(setRoleName(client, '')).rejects.toBeInstanceOf(InvalidInputError);
       });
     });
   });
@@ -88,9 +76,7 @@ describe('set helpers', () => {
     it('encodes the array as a comma-separated string', async () => {
       await withTransaction(db.pool, async (client) => {
         await setTenantIds(client, [1, 2, 3]);
-        const { rows } = await client.query<{ v: string }>(
-          `SELECT current_setting('app.tenant_ids', true) AS v`,
-        );
+        const { rows } = await client.query<{ v: string }>(`SELECT current_setting('app.tenant_ids', true) AS v`);
         expect(rows[0]?.v).toBe('1,2,3');
       });
     });
@@ -98,18 +84,14 @@ describe('set helpers', () => {
     it('handles empty array as empty string', async () => {
       await withTransaction(db.pool, async (client) => {
         await setTenantIds(client, []);
-        const { rows } = await client.query<{ v: string }>(
-          `SELECT current_setting('app.tenant_ids', true) AS v`,
-        );
+        const { rows } = await client.query<{ v: string }>(`SELECT current_setting('app.tenant_ids', true) AS v`);
         expect(rows[0]?.v).toBe('');
       });
     });
 
     it('rejects non-integer values', async () => {
       await withTransaction(db.pool, async (client) => {
-        await expect(
-          setTenantIds(client, [1, 2.5, 3]),
-        ).rejects.toBeInstanceOf(InvalidInputError);
+        await expect(setTenantIds(client, [1, 2.5, 3])).rejects.toBeInstanceOf(InvalidInputError);
         await expect(
           // @ts-expect-error testing runtime validation
           setTenantIds(client, [1, 'two', 3]),
@@ -131,9 +113,7 @@ describe('set helpers', () => {
     it('sets app.all_tenants to "true"', async () => {
       await withTransaction(db.pool, async (client) => {
         await setAllTenants(client, true);
-        const { rows } = await client.query<{ v: string }>(
-          `SELECT current_setting('app.all_tenants', true) AS v`,
-        );
+        const { rows } = await client.query<{ v: string }>(`SELECT current_setting('app.all_tenants', true) AS v`);
         expect(rows[0]?.v).toBe('true');
       });
     });
@@ -141,9 +121,7 @@ describe('set helpers', () => {
     it('sets app.all_tenants to "false"', async () => {
       await withTransaction(db.pool, async (client) => {
         await setAllTenants(client, false);
-        const { rows } = await client.query<{ v: string }>(
-          `SELECT current_setting('app.all_tenants', true) AS v`,
-        );
+        const { rows } = await client.query<{ v: string }>(`SELECT current_setting('app.all_tenants', true) AS v`);
         expect(rows[0]?.v).toBe('false');
       });
     });

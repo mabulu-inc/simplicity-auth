@@ -73,26 +73,15 @@ interface EnrollmentRow {
  * @throws {InvalidInputError} If `userCommunicationMethodId` is not a
  *   positive integer or `code` is not a non-empty string.
  */
-export async function verifyDevOtp(
-  db: Queryable,
-  userCommunicationMethodId: number,
-  code: string,
-): Promise<boolean> {
-  if (
-    !Number.isInteger(userCommunicationMethodId) ||
-    userCommunicationMethodId <= 0
-  ) {
-    throw new InvalidInputError(
-      'userCommunicationMethodId must be a positive integer',
-    );
+export async function verifyDevOtp(db: Queryable, userCommunicationMethodId: number, code: string): Promise<boolean> {
+  if (!Number.isInteger(userCommunicationMethodId) || userCommunicationMethodId <= 0) {
+    throw new InvalidInputError('userCommunicationMethodId must be a positive integer');
   }
   if (typeof code !== 'string' || code.length === 0) {
     throw new InvalidInputError('code must be a non-empty string');
   }
 
-  const { rows } = await db.query<EnrollmentRow>(SELECT_ENROLLMENT, [
-    userCommunicationMethodId,
-  ]);
+  const { rows } = await db.query<EnrollmentRow>(SELECT_ENROLLMENT, [userCommunicationMethodId]);
   const enrollment = rows[0];
   if (!enrollment) {
     return false;
@@ -140,21 +129,11 @@ export async function verifyDevOtp(
  *
  * @throws {InvalidInputError} If `userCommunicationMethodId` is not a positive integer.
  */
-export async function isDevOtpEnrolled(
-  db: Queryable,
-  userCommunicationMethodId: number,
-): Promise<boolean> {
-  if (
-    !Number.isInteger(userCommunicationMethodId) ||
-    userCommunicationMethodId <= 0
-  ) {
-    throw new InvalidInputError(
-      'userCommunicationMethodId must be a positive integer',
-    );
+export async function isDevOtpEnrolled(db: Queryable, userCommunicationMethodId: number): Promise<boolean> {
+  if (!Number.isInteger(userCommunicationMethodId) || userCommunicationMethodId <= 0) {
+    throw new InvalidInputError('userCommunicationMethodId must be a positive integer');
   }
-  const { rowCount } = await db.query(SELECT_ENROLLMENT_EXISTS, [
-    userCommunicationMethodId,
-  ]);
+  const { rowCount } = await db.query(SELECT_ENROLLMENT_EXISTS, [userCommunicationMethodId]);
   return (rowCount ?? 0) > 0;
 }
 
@@ -191,11 +170,7 @@ export function generateDevOtpSecret(): string {
  * the user's email address or phone number. The issuer is the application
  * name (e.g., "Salez1"). Both are URI-encoded by the underlying library.
  */
-export function getDevOtpEnrollmentUri(input: {
-  secret: string;
-  label: string;
-  issuer: string;
-}): string {
+export function getDevOtpEnrollmentUri(input: { secret: string; label: string; issuer: string }): string {
   if (typeof input?.secret !== 'string' || input.secret.length === 0) {
     throw new InvalidInputError('secret must be a non-empty string');
   }

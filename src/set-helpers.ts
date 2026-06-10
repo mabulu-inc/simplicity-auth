@@ -31,10 +31,7 @@ export const SESSION_VAR_NAMES = {
  *
  * @throws {InvalidInputError} If `sessionId` is not a non-empty string.
  */
-export async function setSessionId(
-  client: PoolClient,
-  sessionId: string,
-): Promise<void> {
+export async function setSessionId(client: PoolClient, sessionId: string): Promise<void> {
   if (typeof sessionId !== 'string' || sessionId.length === 0) {
     throw new InvalidInputError('sessionId must be a non-empty string');
   }
@@ -55,10 +52,7 @@ export async function setSessionId(
  *   Defaults to `string`. Narrow this in a thin wrapper.
  * @throws {InvalidInputError} If `roleName` is not a non-empty string.
  */
-export async function setRoleName<TRole extends string = string>(
-  client: PoolClient,
-  roleName: TRole,
-): Promise<void> {
+export async function setRoleName<TRole extends string = string>(client: PoolClient, roleName: TRole): Promise<void> {
   if (typeof roleName !== 'string' || roleName.length === 0) {
     throw new InvalidInputError('roleName must be a non-empty string');
   }
@@ -74,24 +68,16 @@ export async function setRoleName<TRole extends string = string>(
  *
  * @throws {InvalidInputError} If any element of `tenantIds` is not a finite integer.
  */
-export async function setTenantIds(
-  client: PoolClient,
-  tenantIds: readonly number[],
-): Promise<void> {
+export async function setTenantIds(client: PoolClient, tenantIds: readonly number[]): Promise<void> {
   if (!Array.isArray(tenantIds)) {
     throw new InvalidInputError('tenantIds must be an array of integers');
   }
   for (const id of tenantIds) {
     if (!Number.isInteger(id)) {
-      throw new InvalidInputError(
-        `tenantIds must contain only integers; got ${String(id)}`,
-      );
+      throw new InvalidInputError(`tenantIds must contain only integers; got ${String(id)}`);
     }
   }
-  await client.query(SET_CONFIG, [
-    SESSION_VAR_NAMES.tenantIds,
-    tenantIds.join(','),
-  ]);
+  await client.query(SET_CONFIG, [SESSION_VAR_NAMES.tenantIds, tenantIds.join(',')]);
 }
 
 /**
@@ -103,17 +89,11 @@ export async function setTenantIds(
  *
  * @throws {InvalidInputError} If `allTenants` is not a boolean.
  */
-export async function setAllTenants(
-  client: PoolClient,
-  allTenants: boolean,
-): Promise<void> {
+export async function setAllTenants(client: PoolClient, allTenants: boolean): Promise<void> {
   if (typeof allTenants !== 'boolean') {
     throw new InvalidInputError('allTenants must be a boolean');
   }
-  await client.query(SET_CONFIG, [
-    SESSION_VAR_NAMES.allTenants,
-    allTenants ? 'true' : 'false',
-  ]);
+  await client.query(SET_CONFIG, [SESSION_VAR_NAMES.allTenants, allTenants ? 'true' : 'false']);
 }
 
 /**

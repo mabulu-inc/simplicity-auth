@@ -47,9 +47,4 @@ export {
 export { withServiceContext } from './with-service-context.js';
 
 // Developer OTP — for devs whose phones can't receive Twilio SMS.
-export {
-  verifyDevOtp,
-  isDevOtpEnrolled,
-  generateDevOtpSecret,
-  getDevOtpEnrollmentUri,
-} from './dev-otp.js';
+export { verifyDevOtp, isDevOtpEnrolled, generateDevOtpSecret, getDevOtpEnrollmentUri } from './dev-otp.js';

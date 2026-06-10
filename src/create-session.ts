@@ -78,22 +78,12 @@ interface UserIdRow {
  *
  * @throws {InvalidInputError} If `ttl` is empty or `userCommunicationMethodId` is not a positive integer.
  */
-export async function createSession(
-  db: Queryable,
-  input: CreateSessionInput,
-): Promise<Session> {
-  if (
-    !Number.isInteger(input.userCommunicationMethodId) ||
-    input.userCommunicationMethodId <= 0
-  ) {
-    throw new InvalidInputError(
-      'userCommunicationMethodId must be a positive integer',
-    );
+export async function createSession(db: Queryable, input: CreateSessionInput): Promise<Session> {
+  if (!Number.isInteger(input.userCommunicationMethodId) || input.userCommunicationMethodId <= 0) {
+    throw new InvalidInputError('userCommunicationMethodId must be a positive integer');
   }
   if (typeof input.ttl !== 'string' || input.ttl.length === 0) {
-    throw new InvalidInputError(
-      'ttl must be a non-empty Postgres interval string (e.g. "30 days")',
-    );
+    throw new InvalidInputError('ttl must be a non-empty Postgres interval string (e.g. "30 days")');
   }
 
   const sessionId = randomUUID();
@@ -119,17 +109,13 @@ export async function createSession(
     throw new Error('createSession: INSERT did not return a row');
   }
 
-  const userResult = await db.query<UserIdRow>(SELECT_USER_ID, [
-    input.userCommunicationMethodId,
-  ]);
+  const userResult = await db.query<UserIdRow>(SELECT_USER_ID, [input.userCommunicationMethodId]);
   const userRow = userResult.rows[0];
   if (!userRow) {
     // The FK on sessions.user_communication_method_id should have
     // prevented the INSERT above from succeeding if this row didn't
     // exist. Defensive throw.
-    throw new Error(
-      'createSession: user_communication_method_id has no matching user',
-    );
+    throw new Error('createSession: user_communication_method_id has no matching user');
   }
 
   return {

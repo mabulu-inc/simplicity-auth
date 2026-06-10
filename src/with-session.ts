@@ -1,17 +1,9 @@
 import type { Pool, PoolClient } from 'pg';
-import {
-  RoleNotAssignedError,
-  SessionExpiredError,
-  SessionNotFoundError,
-} from './errors.js';
+import { RoleNotAssignedError, SessionExpiredError, SessionNotFoundError } from './errors.js';
 import { hashId } from './internal/hash-id.js';
 import { noopLogger } from './internal/noop-logger.js';
 import { setSessionContext } from './set-helpers.js';
-import type {
-  SessionAuth,
-  SessionContext,
-  WithSessionOptions,
-} from './types.js';
+import type { SessionAuth, SessionContext, WithSessionOptions } from './types.js';
 import { withTransaction } from './with-transaction.js';
 
 /**
@@ -95,10 +87,7 @@ export async function withSession<TRole extends string = string, T = unknown>(
   const sessionHash = hashId(auth.sessionId);
 
   return withTransaction(pool, async (client) => {
-    const { rows } = await client.query<ResolvedRow>(RESOLVE_SESSION, [
-      auth.sessionId,
-      auth.roleName,
-    ]);
+    const { rows } = await client.query<ResolvedRow>(RESOLVE_SESSION, [auth.sessionId, auth.roleName]);
     const row = rows[0];
 
     if (!row) {
@@ -107,18 +96,12 @@ export async function withSession<TRole extends string = string, T = unknown>(
     }
 
     if (row.expiresAt.getTime() <= Date.now()) {
-      log.warn(
-        { sessionHash, expiresAt: row.expiresAt.toISOString() },
-        'session expired',
-      );
+      log.warn({ sessionHash, expiresAt: row.expiresAt.toISOString() }, 'session expired');
       throw new SessionExpiredError(row.expiresAt);
     }
 
     if (row.hasRequestedRole !== true) {
-      log.warn(
-        { sessionHash, userId: row.userId, requestedRole: auth.roleName },
-        'role not assigned',
-      );
+      log.warn({ sessionHash, userId: row.userId, requestedRole: auth.roleName }, 'role not assigned');
       throw new RoleNotAssignedError(auth.roleName);
     }
 
