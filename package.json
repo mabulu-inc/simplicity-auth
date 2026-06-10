@@ -52,21 +52,25 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "release": "GITHUB_TOKEN=$(gh auth token) release-it --ci"
+    "release": "GITHUB_TOKEN=$(gh auth token) release-it",
+    "release:patch": "GITHUB_TOKEN=$(gh auth token) release-it patch",
+    "release:minor": "GITHUB_TOKEN=$(gh auth token) release-it minor",
+    "release:major": "GITHUB_TOKEN=$(gh auth token) release-it major"
   },
   "peerDependencies": {
     "pg": ">=8.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@release-it/keep-a-changelog": "^7.1.0",
     "@smplcty/schema-flow": "^0.3.7",
     "@types/node": "^25.5.2",
     "@types/pg": "^8.20.0",
     "eslint": "^10.2.0",
     "pg": "^8.20.0",
+    "release-it": "^20.2.0",
     "typescript": "^6.0.2",
     "typescript-eslint": "^8.58.1",
-    "release-it": "^19.2.4",
     "vitest": "^4.1.4"
   },
   "dependencies": {
