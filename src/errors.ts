@@ -34,16 +34,36 @@ export class SessionExpiredError extends AuthError {
 }
 
 /**
- * Thrown when a user does not have the role requested for a session.
+ * Thrown when a request asks to activate a role the user does not hold.
+ *
+ * Role selection and validation happen in `withSession` (TS): the pure
+ * `resolve_session` resolver returns the roles the user holds, and
+ * `withSession` rejects a requested role that isn't among them.
  */
-export class RoleNotAssignedError extends AuthError {
-  override readonly name = 'RoleNotAssignedError';
-  override readonly code = 'ROLE_NOT_ASSIGNED' as const;
+export class RoleNotHeldError extends AuthError {
+  override readonly name = 'RoleNotHeldError';
+  override readonly code = 'ROLE_NOT_HELD' as const;
   readonly roleName: string;
 
   constructor(roleName: string, message?: string) {
-    super(message ?? `User does not have role: ${roleName}`);
+    super(message ?? `User does not hold role: ${roleName}`);
     this.roleName = roleName;
+  }
+}
+
+/**
+ * Thrown when `withServiceContext` can't find a `users` row of
+ * `kind = 'service'` with the given name. Almost always a missing seed:
+ * the service principal must be provisioned before background writes run.
+ */
+export class ServicePrincipalNotFoundError extends AuthError {
+  override readonly name = 'ServicePrincipalNotFoundError';
+  override readonly code = 'SERVICE_PRINCIPAL_NOT_FOUND' as const;
+  readonly serviceName: string;
+
+  constructor(serviceName: string, message?: string) {
+    super(message ?? `No service principal named: ${serviceName}`);
+    this.serviceName = serviceName;
   }
 }
 

@@ -1,131 +1,134 @@
 import type { Pool, PoolClient } from 'pg';
-import { RoleNotAssignedError, SessionExpiredError, SessionNotFoundError } from './errors.js';
+import { withTransaction } from '@smplcty/db';
+import { RoleNotHeldError, SessionExpiredError, SessionNotFoundError } from './errors.js';
 import { hashId } from './internal/hash-id.js';
+import { hashToken } from './internal/hash-token.js';
 import { noopLogger } from './internal/noop-logger.js';
-import { setSessionContext } from './set-helpers.js';
+import { setIdentityContext } from './set-helpers.js';
 import type { SessionAuth, SessionContext, WithSessionOptions } from './types.js';
-import { withTransaction } from './with-transaction.js';
 
 /**
- * Resolves the session and the user's roles in one query. Returns null
- * if the session row doesn't exist or doesn't belong to a user with the
- * requested role.
- *
- * The query joins through `sessions → user_communication_methods → users
- * → user_roles → roles`, filtering by the requested role name. It also
- * computes:
- *
- * - `tenantIds`: distinct non-null tenant_ids on user_roles rows
- * - `allTenants`: true if any user_roles row has tenant_id IS NULL
- * - `roles`: array of all distinct role names assigned to the user
- *
- * The roles array is sourced from a separate inner join so we get every
- * role the user has, not just the one being requested. The `_hasRole`
- * column tells us whether the requested role specifically was found.
- */
-/**
- * Uses the resolve_session() SECURITY DEFINER function so the query
- * bypasses RLS on auth tables (user_communication_methods, user_roles).
- * This lets app_user resolve sessions without needing GUCs set first.
+ * Calls the pure `resolve_session` SECURITY DEFINER resolver so the read
+ * bypasses RLS on the auth tables (sessions, user_communication_methods,
+ * user_roles). The resolver validates nothing — it returns the user, the
+ * expiry, the roles the user holds, the default role, and the privileges.
+ * Validation and role selection happen here in TS.
  */
 const RESOLVE_SESSION = `
   SELECT
-    user_id    AS "userId",
-    expires_at AS "expiresAt",
-    tenant_ids AS "tenantIds",
-    all_tenants AS "allTenants",
-    roles      AS "roles",
-    has_requested_role AS "hasRequestedRole"
-  FROM resolve_session($1, $2)
+    user_id      AS "userId",
+    expires_at   AS "expiresAt",
+    roles        AS "roles",
+    default_role AS "defaultRole",
+    privileges   AS "privileges"
+  FROM resolve_session($1)
 `;
 
 interface ResolvedRow {
   userId: number;
   expiresAt: Date;
-  tenantIds: number[];
-  allTenants: boolean;
   roles: string[];
-  hasRequestedRole: boolean | null;
+  defaultRole: string | null;
+  privileges: string[];
 }
 
 /**
- * The high-level "just make it work" entry point. Checks out a
- * connection, opens a transaction, validates the session, validates the
- * role, sets the four `app.*` GUC variables via parameterized
- * `set_config(_, _, true)`, runs the callback, and commits (or rolls
- * back on throw).
+ * The high-level "just make it work" request entry point. Opens a
+ * `@smplcty/db` transaction, resolves the session from its token, validates
+ * it, picks and validates the active role, sets the identity GUCs, runs the
+ * app scope hook, then runs the callback — committing on success or rolling
+ * back on throw.
  *
- * The session variables use **transaction scope**, so they're discarded
- * automatically when this function returns. Cross-request leakage is
- * impossible.
+ * Active-role selection (in TS, not the resolver):
+ *   1. `roleName` if given — must be one the user holds, else {@link RoleNotHeldError}.
+ *   2. otherwise the user's default role, if any.
+ *   3. otherwise none — a privilege-only request, which is **not** an error.
+ *
+ * Identity GUCs are transaction-local, so they vanish on COMMIT/ROLLBACK —
+ * no cross-request leakage. Scope GUCs are not set here: pass a `scope`
+ * hook (e.g. `flatTenantScope()`) for that, or rely on function-carried RLS.
  *
  * @example
  * ```ts
  * const widgets = await withSession(
  *   pool,
- *   { sessionId, roleName: 'user' },
+ *   { token, roleName: 'user' },
  *   async (client, ctx) => {
- *     // ctx = { userId, tenantIds, allTenants, roles }
+ *     // ctx = { userId, activeRole, roles, privileges }
  *     const { rows } = await client.query('SELECT * FROM widgets');
  *     return rows;
- *   }
+ *   },
+ *   { scope: flatTenantScope() },
  * );
  * ```
  *
- * @throws {SessionNotFoundError}  If no session row matches `auth.sessionId`.
- * @throws {SessionExpiredError}   If the session has passed its `expires_at`.
- * @throws {RoleNotAssignedError}  If the user does not have `auth.roleName`.
- * @throws {InvalidInputError}     If `auth.sessionId` or `auth.roleName` is empty.
+ * @throws {SessionNotFoundError}  If no session matches the token.
+ * @throws {SessionExpiredError}   If the session has expired (or was revoked).
+ * @throws {RoleNotHeldError}      If `roleName` is given but not held.
+ * @throws {InvalidInputError}     If `token` is empty.
  */
 export async function withSession<TRole extends string = string, T = unknown>(
   pool: Pool,
   auth: SessionAuth<TRole>,
   fn: (client: PoolClient, ctx: SessionContext<TRole>) => Promise<T>,
-  options: WithSessionOptions = {},
+  options: WithSessionOptions<TRole> = {},
 ): Promise<T> {
   const log = options.logger ?? noopLogger;
-  const sessionHash = hashId(auth.sessionId);
+  const tokenHash = hashToken(auth.token);
+  const fingerprint = hashId(auth.token);
 
   return withTransaction(pool, async (client) => {
-    const { rows } = await client.query<ResolvedRow>(RESOLVE_SESSION, [auth.sessionId, auth.roleName]);
+    const { rows } = await client.query<ResolvedRow>(RESOLVE_SESSION, [tokenHash]);
     const row = rows[0];
 
     if (!row) {
-      log.warn({ sessionHash }, 'session not found');
+      log.warn({ session: fingerprint }, 'session not found');
       throw new SessionNotFoundError();
     }
 
+    // Revocation is just expiry: revoke sets expires_at = now(). So an
+    // expired-or-revoked session fails the same check.
     if (row.expiresAt.getTime() <= Date.now()) {
-      log.warn({ sessionHash, expiresAt: row.expiresAt.toISOString() }, 'session expired');
+      log.warn({ session: fingerprint, expiresAt: row.expiresAt.toISOString() }, 'session expired');
       throw new SessionExpiredError(row.expiresAt);
     }
 
-    if (row.hasRequestedRole !== true) {
-      log.warn({ sessionHash, userId: row.userId, requestedRole: auth.roleName }, 'role not assigned');
-      throw new RoleNotAssignedError(auth.roleName);
+    // Active-role selection happens here, not in the resolver.
+    let activeRole: TRole | null;
+    if (auth.roleName !== undefined) {
+      if (!row.roles.includes(auth.roleName)) {
+        log.warn({ session: fingerprint, userId: row.userId, requestedRole: auth.roleName }, 'role not held');
+        throw new RoleNotHeldError(auth.roleName);
+      }
+      activeRole = auth.roleName;
+    } else {
+      activeRole = (row.defaultRole as TRole | null) ?? null;
     }
 
     const ctx: SessionContext<TRole> = {
       userId: row.userId,
-      tenantIds: row.tenantIds,
-      allTenants: row.allTenants,
+      activeRole,
       roles: row.roles as TRole[],
+      privileges: row.privileges,
     };
 
-    await setSessionContext(client, {
-      sessionId: auth.sessionId,
-      roleName: auth.roleName,
-      tenantIds: ctx.tenantIds,
-      allTenants: ctx.allTenants,
+    await setIdentityContext(client, {
+      actorId: ctx.userId,
+      sessionId: tokenHash,
+      activeRole: ctx.activeRole,
+      privileges: ctx.privileges,
     });
+
+    // App-owned intra-tenant scope. No-op when omitted.
+    await options.scope?.(client, ctx);
 
     log.debug(
       {
-        sessionHash,
+        session: fingerprint,
         userId: ctx.userId,
-        roleName: auth.roleName,
-        tenantCount: ctx.tenantIds.length,
-        allTenants: ctx.allTenants,
+        activeRole: ctx.activeRole,
+        roleCount: ctx.roles.length,
+        privilegeCount: ctx.privileges.length,
       },
       'session context set',
     );

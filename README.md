@@ -1,60 +1,65 @@
 # @smplcty/auth
 
-Robust, type-safe session and role-based authentication primitives for PostgreSQL apps using Row-Level Security.
+Robust, type-safe **stateful-session** authentication primitives for PostgreSQL apps using Row-Level Security.
 
 [![npm](https://img.shields.io/npm/v/@smplcty/auth.svg)](https://www.npmjs.com/package/@smplcty/auth)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ## Why
 
-Multi-tenant Postgres apps that use Row-Level Security need three things in every request:
+The library owns **identity, sessions, roles/privileges, tenants, sign-in federation, and per-request context**. Each app owns only its **intra-tenant authorization scope** (its RLS model). See [`docs/v1-design.md`](docs/v1-design.md) for the full design.
 
-1. A validated session attached to a real user.
-2. A role for that session that gates which RLS policies apply.
-3. A list of tenant IDs the session is allowed to see.
+Stateful sessions (not JWT) because the requirements decide it: track sign-ins/activity, force immediate sign-off for a whole tenant, and make role/privilege changes take effect immediately. All three need per-request server authority — resolved in one indexed query folded into the RLS transaction every request already opens.
 
-These need to be set as session variables (`app.session_id`, `app.role_name`, `app.tenant_ids`, `app.all_tenants`) on a dedicated database connection, inside a transaction so they don't leak across requests.
+Every request sets four **identity GUCs** on its transaction-bound connection, transaction-scoped so they can't leak across requests:
 
-`@smplcty/auth` makes that boring and safe. The high-level `withSession` does the whole dance in one call. The low-level `set*` helpers and `withTransaction` are there for migration and unusual cases.
+| GUC               | Meaning                                                              |
+| ----------------- | -------------------------------------------------------------------- |
+| `app.actor_id`    | the acting user (human **or** service); `current_user_id()` reads it |
+| `app.session_id`  | the session hash, for correlation/audit                              |
+| `app.active_role` | the chosen mode/persona role for the request                         |
+| `app.privileges`  | comma-separated capability flags the user holds                      |
+
+Intra-tenant **scope** GUCs (tenant ids, region/plant, visible reps, …) are **not** in this contract — they're app-owned, set by a scope hook you supply (or a provided preset).
 
 ## Install
 
 ```sh
-pnpm add @smplcty/auth pg
+pnpm add @smplcty/auth @smplcty/db pg
 ```
 
-`pg` is a peer dependency.
+`pg` is a peer dependency; `@smplcty/db` provides the transaction primitive. Sign-in method handlers are opt-in subpaths with their own optional peers (see [Sign-in methods](#sign-in-methods-pluggable)).
 
 ## High-level usage — `withSession`
 
-The default API. Hand it a pool, an authenticated session, and a callback. It checks out a connection, opens a transaction, validates the session, sets all four session variables via parameterized `set_config`, runs your code, and commits (or rolls back on throw).
+The default API. Hand it a pool, the raw session token, and a callback. It opens a `@smplcty/db` transaction, resolves and validates the session, picks the active role, sets the identity GUCs, runs your (optional) scope hook, runs your code, and commits — or rolls back on throw.
 
 ```ts
 import { withSession } from '@smplcty/auth';
 
-const widgets = await withSession(pool, { sessionId, roleName: 'user' }, async (client, ctx) => {
-  // ctx = { userId, tenantIds, allTenants, roles }
+const widgets = await withSession(pool, { token, roleName: 'user' }, async (client, ctx) => {
+  // ctx = { userId, activeRole, roles, privileges }
   const { rows } = await client.query('SELECT * FROM widgets');
   return rows;
 });
 ```
 
-If the session doesn't exist, is expired, or the user doesn't have the requested role, `withSession` throws **before** your callback runs. Your code never sees an invalid context.
+Active-role selection happens in TypeScript: the requested `roleName` if given (must be one the user holds), else the user's **default** role, else none — a privilege-only request is not an error. If the session doesn't exist, is expired/revoked, or the requested role isn't held, `withSession` throws **before** your callback runs.
 
 ### Errors thrown by `withSession`
 
-| Error                  | When                                           |
-| ---------------------- | ---------------------------------------------- |
-| `SessionNotFoundError` | sessionId doesn't match any row                |
-| `SessionExpiredError`  | session row exists but `expires_at` has passed |
-| `RoleNotAssignedError` | user does not have the requested role          |
-| `InvalidInputError`    | sessionId or roleName is empty / wrong type    |
+| Error                  | When                                          |
+| ---------------------- | --------------------------------------------- |
+| `SessionNotFoundError` | token matches no session                      |
+| `SessionExpiredError`  | session has expired (or was revoked)          |
+| `RoleNotHeldError`     | a requested `roleName` the user does not hold |
+| `InvalidInputError`    | `token` is empty / wrong type                 |
 
-All errors extend `AuthError` and have a `code` property:
+All errors extend `AuthError` and carry a `code`:
 
 ```ts
 try {
-  await withSession(pool, { sessionId, roleName: 'user' }, fn);
+  await withSession(pool, { token, roleName: 'user' }, fn);
 } catch (err) {
   if (err instanceof AuthError && err.code === 'SESSION_EXPIRED') {
     // redirect to login
@@ -63,109 +68,164 @@ try {
 }
 ```
 
-## Low-level usage — `withTransaction` + `set*` helpers
+## Authorization scope (app-owned)
 
-For migrating existing code that has its own session-extraction logic, or for tests, or for any case where you need more control than `withSession` gives you.
+`withSession` sets identity GUCs only. To set intra-tenant **scope** GUCs your RLS needs, pass a `scope` hook — it runs inside the request transaction, after the identity GUCs are set:
 
 ```ts
-import { withTransaction, setSessionId, setRoleName, setTenantIds, setAllTenants } from '@smplcty/auth';
-
-await withTransaction(pool, async (client) => {
-  await setSessionId(client, sessionId);
-  await setRoleName(client, 'user');
-  await setTenantIds(client, [1, 2, 3]);
-  await setAllTenants(client, false);
-
-  return client.query('SELECT * FROM widgets');
+await withSession(pool, { token, roleName: 'user' }, fn, {
+  scope: async (client, identity) => {
+    // identity = { userId, activeRole, roles, privileges }
+    // set whatever scope GUCs your RLS policies read
+  },
 });
 ```
 
-Or all four at once:
+For the common flat multi-tenant case (the 0.6.x behavior), a ready-made preset ships at a subpath:
 
 ```ts
-import { withTransaction, setSessionContext } from '@smplcty/auth';
+import { withSession } from '@smplcty/auth';
+import { flatTenantScope } from '@smplcty/auth/flat-tenant';
+
+const scope = flatTenantScope(); // sets app.tenant_ids + app.all_tenants from user_roles
+await withSession(pool, { token, roleName: 'user' }, fn, { scope });
+```
+
+Apps with a richer model (producer/region/plant, rep hierarchy) ship their own hook, or enforce scope "function-carried" (RLS policies call functions that read `current_user_id()`).
+
+## Background work — `withServiceContext`
+
+Background writers (ingestion, workers, app-init) have no human session, but audit attribution is NOT NULL. Run them as a named **service principal** (a `users` row of `kind='service'`) so `app.actor_id` is set and writes are attributed:
+
+```ts
+import { withServiceContext } from '@smplcty/auth';
+
+await withServiceContext(pool, 'transform-worker', async (client) => {
+  await client.query('INSERT INTO metrics (...) VALUES (...)'); // audited to the service
+});
+```
+
+## Low-level usage — `withTransaction` + identity setters
+
+For migrating existing code, tests, or unusual cases. `withTransaction` is re-exported from `@smplcty/db`.
+
+```ts
+import { withTransaction, setIdentityContext } from '@smplcty/auth';
 
 await withTransaction(pool, async (client) => {
-  await setSessionContext(client, {
-    sessionId,
-    roleName: 'user',
-    tenantIds: [1, 2, 3],
-    allTenants: false,
+  await setIdentityContext(client, {
+    actorId: 42,
+    sessionId: tokenHash,
+    activeRole: 'user',
+    privileges: ['can_export'],
   });
   return client.query('SELECT * FROM widgets');
 });
 ```
 
-**Important contract:** every `set*` helper requires a `PoolClient` that is already inside an open transaction. The `withTransaction` wrapper guarantees that. If you try to pass a `Pool`, the type checker rejects it. The variables are set with **transaction scope** (`set_config(name, value, true)`) — they are automatically discarded when the transaction commits or rolls back, so cross-request leakage is impossible.
+Individual setters (`setActorId`, `setSessionId`, `setActiveRole`, `setPrivileges`, `setLocal`) and the `IDENTITY_GUC` name map are also exported. Every setter requires a `PoolClient` already inside a transaction; the variables are set transaction-scoped (`set_config(_, _, true)`) and discarded on COMMIT/ROLLBACK. The low-level setters do **not** validate the session — use `withSession` for that.
 
-The low-level helpers do **not** validate that the session exists or that the user has the role. If you need validation, use `withSession`. If you bypass `withSession`, validate session and role yourself before setting them.
+## Session lifecycle
 
-## Sign-in flow primitives
-
-`createSession`, `validateSession`, `revokeSession`, and `findUserByCommunicationMethod` are the helpers you need to build a sign-in / sign-out / authorizer flow. None of them are coupled to a specific OTP provider, identity model, or transport.
+`createSession`, `validateSession`, `revokeSession`, `revokeUserSessions`, `revokeTenantSessions`, `touchSession`, and `findUserByCommunicationMethod` build sign-in / sign-out / activity / authorizer flows. None are coupled to a specific OTP provider, identity model, or transport.
 
 ### `findUserByCommunicationMethod`
 
 ```ts
-import { findUserByCommunicationMethod } from '@smplcty/auth';
-
-const lookup = await findUserByCommunicationMethod(db, {
-  channel: 'email',
-  code: 'alice@example.com',
-});
-if (!lookup) {
-  // user not registered
-  return;
-}
-// lookup = { userId, userCommunicationMethodId }
+const lookup = await findUserByCommunicationMethod(db, { channel: 'email', code: 'alice@example.com' });
+// lookup = { userId, userCommunicationMethodId } | null
 ```
 
 ### `createSession`
 
 ```ts
-import { createSession } from '@smplcty/auth';
-
 const session = await createSession(db, {
   userCommunicationMethodId: lookup.userCommunicationMethodId,
   ttl: '30 days',
   ip: req.ip,
   geo: { country: 'US', region: 'CA' },
 });
-// session = { sessionId, userId, createdAt, expiresAt }
+// session = { token, userId, createdAt, expiresAt }
+setCookie('session', session.token); // raw token to the client, ONCE
 ```
 
-`ttl` is a Postgres interval string, evaluated server-side via `now() + interval $ttl`. This means the expiration time has zero clock-skew between your app and the database.
+A fresh opaque token (256 bits) is generated server-side; **only its SHA-256 hash is stored** (as the `sessions` primary key). `session.token` is the raw bearer credential — return it once and don't persist it. `ttl` is a Postgres interval evaluated server-side (`now() + interval $ttl`), so there's no app/DB clock skew.
 
 ### `validateSession`
 
-For authorizers and other "is this token alive?" checks. Returns the Session if valid, throws if not. Does not set any database context.
+For authorizers / "is this token alive?" checks. Returns `SessionInfo` (`{ userId, createdAt, expiresAt, lastSeenAt }`) or throws. Sets no GUCs.
 
 ```ts
-import { validateSession, SessionExpiredError } from '@smplcty/auth';
-
 try {
-  const session = await validateSession(db, sessionId);
-  return { allow: true, principalId: String(session.userId) };
-} catch (err) {
+  const info = await validateSession(db, token);
+  return { allow: true, principalId: String(info.userId) };
+} catch {
   return { allow: false };
 }
 ```
 
-### `revokeSession`
+### Revocation & activity
 
 ```ts
-import { revokeSession } from '@smplcty/auth';
-
-await revokeSession(db, sessionId); // idempotent — no error if already revoked
+await revokeSession(db, token); // force sign-off of one session (idempotent)
+await revokeUserSessions(db, userId); // sign off every session of a user
+await revokeTenantSessions(db, tenantId); // tenant-wide sign-off
+await touchSession(db, token); // record activity (last_seen_at); returns whether a live session matched
 ```
 
-Hard-deletes the session row.
+Revoke is a **soft-revoke** — it sets `expires_at = now()`, so the row survives for audit but the session is locked out immediately. Role/privilege changes take effect on the next request automatically (nothing is baked into the token). `revokeTenantSessions` resolves membership from `user_roles.tenant_id` and deliberately spares wildcard (all-tenant) members like global admins.
+
+## Sign-in methods (pluggable)
+
+A `MethodHandler` models a two-phase flow (`initiate` → send OTP / redirect; `complete` → verify → resolved user). The router is **tenant-centric**: the app resolves the tenant from the request sub-domain (`tenants.slug`), the router lists that tenant's IdPs and dispatches the chosen one by `auth_domains.integration_type`. A tenant has **0..N** IdPs (mergers, mixed workforces, multi-domain orgs), so:
+
+- **0 IdPs** → OTP only.
+- **1 IdP** → straight redirect, no sign-in form.
+- **N IdPs** → a chooser (one button per IdP, labeled `displayName`, valued by `auth_domain_id`).
+
+The user-bound OTP path is gated by the tenant's `allow_otp` flag, **enforced in the router** (not just hidden in the UI) so an SSO-only tenant can't be bypassed.
+
+```ts
+import { createMethodRouter } from '@smplcty/auth';
+import { oidcHandler } from '@smplcty/auth/oidc'; // optional peer: @smplcty/oidc
+import { twilioVerifyHandler } from '@smplcty/auth/twilio'; // optional peer: @smplcty/twilio
+import { createTwilioVerifyClient } from '@smplcty/twilio';
+
+const router = createMethodRouter({
+  db: pool,
+  handlers: { oidc: oidcHandler() }, // org-bound, by integration_type
+  otpHandler: twilioVerifyHandler({ client: createTwilioVerifyClient(cfg) }), // user-bound, tenant-gated
+});
+
+// Sign-in page — app parsed Host → 'acme':
+const opts = await router.signInOptions({ tenantSlug: 'acme' });
+// opts = { tenantId, authDomains: AuthDomain[], otpAllowed: boolean }
+//   render: opts.authDomains (buttons) + an OTP form iff opts.otpAllowed
+
+// OIDC — user clicked the "Microsoft" button (auth_domain_id 1):
+const { redirectUrl } = await router.initiate(1);
+// ...on callback, the app loads the auth_domain it stored against `state`:
+const user = await router.complete(1, idToken);
+
+// OTP (only when opts.otpAllowed):
+await router.initiateOtp({ tenantId: opts.tenantId, identifier: phone });
+const user2 = await router.completeOtp({ tenantId: opts.tenantId, identifier: phone, credential: code });
+
+const session = await createSession(pool, {
+  userCommunicationMethodId: user.userCommunicationMethodId,
+  ttl: '30 days',
+});
+```
+
+Auth **core** depends on neither `jose` nor Twilio — the handler subpaths do, as **optional peers**. A password-only app installs neither. OIDC is org-bound (reads `auth_domains`); Twilio Verify is user-bound (phone/email) and integrates the [dev-OTP](#developer-otp--for-devs-whose-phones-cant-receive-sms) fallback automatically.
+
+**What stays app-side:** parsing the request `Host` → slug, the chooser/redirect UI, and the OIDC login-state store (the `state`/`nonce`/PKCE verifier persisted across the redirect). The full OIDC authorization-code flow (authorization-URL building, PKCE, token exchange) is being added to `@smplcty/oidc`; today `oidcHandler.initiate` builds the redirect from the `auth_domains` config and `complete` verifies the returned `id_token`.
 
 ## Developer OTP — for devs whose phones can't receive SMS
 
 Twilio's Verify service doesn't deliver SMS to every carrier reliably (especially overseas, certain pre-paid carriers, and some VoIP numbers). Real-world projects need a way for developers to sign in even when SMS delivery is broken.
 
-`@smplcty/auth` ships per-developer TOTP enrollment for exactly this case. Each enrolled dev has their own time-based one-time password secret stored in `dev_otp_enrollments`, scanned into a standard authenticator app (1Password, Authy, Google Authenticator, etc.). The sign-in-verify handler tries the dev OTP first; if it doesn't match, it falls through to Twilio.
+`@smplcty/auth` ships per-developer TOTP enrollment for exactly this case. Each enrolled dev has their own time-based one-time password secret stored in `dev_otp_enrollments`, scanned into a standard authenticator app (1Password, Authy, Google Authenticator, etc.). The verify side tries the dev OTP first; if it doesn't match, it falls through to Twilio. (The `twilioVerifyHandler` does this for you; the primitives below are for hand-rolled flows.)
 
 ### How the codes are distinguished from Twilio codes
 
@@ -277,7 +337,7 @@ WHERE cc.name = 'phone' AND ucm.code = '${phone}';
 `);
 ```
 
-Run it with `pnpm tsx scripts/enroll-dev.mts +15558675309 'Sam (iPhone)'`. The script generates a fresh secret, prints a scannable QR code, and gives you the SQL to run against your database.
+The script generates a fresh secret, prints a scannable QR code, and gives you the SQL to run against your database.
 
 ### Revoking a dev's enrollment
 
@@ -291,24 +351,24 @@ WHERE user_communication_method_id = (
 );
 ```
 
-The next sign-in-verify call for that user will fall through to Twilio as if they were never enrolled.
+The next verify call for that user will fall through to Twilio as if they were never enrolled.
 
 ### Why per-dev TOTP instead of a shared bypass code?
 
-Earlier versions of this codebase used a `DEV_PHONE_NUMBERS` + `DEV_VERIFICATION_CODE` env var pair where any dev phone, when paired with the magic env var code, bypassed Twilio. That design has several problems: a single static secret shared across all devs, no per-dev revocation, no audit trail, and the bypass mechanism baked into the source code as a recipe for "how to sign in without OTP." Per-dev TOTP fixes all of these:
+A single static bypass code shared across all devs has a large blast radius, no per-dev revocation, and no audit trail, and bakes a "how to sign in without OTP" recipe into the source. Per-dev TOTP fixes all of these: one-account blast radius, delete-one-row revocation, a `last_used_at`/`used_count` audit trail per enrollment, codes that rotate every 30s, and a possession factor (the authenticator app on a specific device). Secrets live per-dev in the DB, not in source.
 
-| Concern                  | Shared bypass code                           | Per-dev TOTP                                                   |
-| ------------------------ | -------------------------------------------- | -------------------------------------------------------------- |
-| Secret leak blast radius | Every dev account compromised                | One dev account                                                |
-| Per-dev revocation       | Rotate the shared secret + everyone re-syncs | Delete one row                                                 |
-| Audit trail              | None                                         | `last_used_at` + `used_count` per enrollment                   |
-| Brute-force resistance   | 6-digit space, no rotation                   | 6-digit space, rotates every 30s                               |
-| Source-code visible      | Shared secret + bypass logic                 | Just the verification code path; secrets are per-dev in the DB |
-| Possession factor        | Just env var knowledge                       | Authenticator app on a specific device                         |
+## Roles & privileges
 
-## Typed roles
+One `roles` table, one `user_roles` assignment, a flag:
 
-By default `roleName` is typed as `string`, which works for any consumer. To get autocomplete and typo detection for your specific role names, write a thin wrapper in your application code:
+- `is_privilege = false` — selectable **mode/persona** roles. These drive the role switcher and become `app.active_role`. One should be marked `is_default`.
+- `is_privilege = true` — always-on **capability flags**. Every privilege the user holds is exported in `app.privileges`.
+
+`ctx.roles` is the selectable roles the user holds; `ctx.privileges` is their capability flags. RLS policies parse `app.privileges` with `string_to_array(current_setting('app.privileges', true), ',')`.
+
+### Typed roles
+
+By default `roleName` is `string`. For autocomplete and typo detection, write a thin wrapper:
 
 ```ts
 // src/lib/auth.ts
@@ -322,160 +382,85 @@ import {
 export type RoleName = 'user' | 'settings' | 'security';
 export type SessionContext = BaseContext<RoleName>;
 
-export async function withSession<T>(
+export function withSession<T>(
   pool: Pool,
-  auth: { sessionId: string; roleName: RoleName },
+  auth: { token: string; roleName?: RoleName },
   fn: (client: PoolClient, ctx: SessionContext) => Promise<T>,
+  options?: Parameters<typeof baseWithSession<RoleName, T>>[3],
 ): Promise<T> {
-  return baseWithSession<RoleName, T>(pool, auth, fn);
+  return baseWithSession<RoleName, T>(pool, auth, fn, options);
 }
 
 export * from '@smplcty/auth';
 ```
 
-Now everywhere in your app:
-
-```ts
-import { withSession, type RoleName } from './lib/auth';
-
-await withSession(pool, { sessionId, roleName: 'user' }, async (client, ctx) => {
-  ctx.roles; // readonly RoleName[]
-});
-```
-
-A typo in `roleName` becomes a compile error.
-
 ## Logging
 
-`@smplcty/auth` does not log anything by default. To get diagnostic logs, pass an optional logger to `withSession`:
+The library logs nothing by default. Pass a logger to `withSession`:
 
 ```ts
-import { withSession } from '@smplcty/auth';
 import pino from 'pino';
-
-const logger = pino({ redact: ['*.sessionId', 'headers.authorization'] });
-
-await withSession(pool, { sessionId, roleName: 'user' }, fn, { logger });
+const logger = pino();
+await withSession(pool, { token, roleName: 'user' }, fn, { logger });
 ```
 
-The `Logger` interface matches pino's structured-logging shape (`(data, msg)`), so you can pass a pino logger directly with no adapter. The library never logs the session ID or any PII; it logs structural events like `'session validated'` with non-sensitive identifiers like `userId` and a hash prefix of the session ID.
-
-If you don't pass a logger, the library is silent.
+The `Logger` interface matches pino's `(data, msg)` shape. The library never logs the raw token or PII — only structural events with safe identifiers (a hash fingerprint, `userId`, role).
 
 ## Required database schema
 
-This library reads and writes specific tables and session variables. It does **not** run migrations — you own your schema. The exact schema the library expects is shipped inside the package at `node_modules/@smplcty/auth/schema/`:
+The library ships its schema as schema-flow YAML inside the package at `@smplcty/auth/schema/`. It does **not** run migrations — you own that. Generic mixins (`audit`, `soft_delete`) are **consumed from [`@smplcty/schema-std`](https://www.npmjs.com/package/@smplcty/schema-std)**, parameterized to auth's `users` table + `app.actor_id`.
 
 ```
 @smplcty/auth/schema/
-└── tables/
-    ├── tenants.yaml
-    ├── roles.yaml                       # includes inline seeds for the
-    │                                    # canonical 'user', 'settings',
-    │                                    # 'security' roles (IDs 1-3)
-    ├── users.yaml
-    ├── communication_channels.yaml
-    ├── user_communication_methods.yaml
-    ├── user_roles.yaml
-    └── sessions.yaml
+├── tables/
+│   ├── users.yaml                       # + audit; seeds the app-init service user (id 1)
+│   ├── tenants.yaml                      # + audit; slug (sub-domain), allow_otp (SSO-only switch)
+│   ├── roles.yaml                        # + audit; seeds 'user' (default), 'settings', 'security'
+│   ├── user_roles.yaml                   # + audit; tenant_id NULL = wildcard / all tenants
+│   ├── communication_channels.yaml
+│   ├── user_communication_methods.yaml
+│   ├── auth_domains.yaml                 # + audit; tenant's IdP(s), 1:N, resolved by id (display_name = button)
+│   ├── sessions.yaml                     # PK = token hash; last_seen_at; geo
+│   └── dev_otp_enrollments.yaml
+├── functions/
+│   ├── resolve_session.yaml              # pure resolver (SECURITY DEFINER)
+│   └── current_user_id.yaml              # reads app.actor_id
+└── post/
+    └── 0001-backfill-audit-by.sql        # attributes seeded rows to app-init before NOT NULL tighten
 ```
 
-These files **are** the schema. They are validated end-to-end by the library's own test suite on every release — if the library passes its tests, your database will accept them.
+### Consuming with [`@smplcty/schema-flow`](https://www.npmjs.com/package/@smplcty/schema-flow)
 
-The canonical role seeds are colocated with the table definition in `roles.yaml`. Role IDs 1-3 are reserved for the standard `'user'`, `'settings'`, `'security'` rows; consumers adding their own roles should use IDs >= 100. The library never references these IDs directly — it always looks up by name — so the IDs are just a stable convention for migration-time conflict detection.
+Import auth's schema and `@smplcty/schema-std` from your schema-flow config. See the reference [`schema-flow.config.yaml`](schema-flow.config.yaml):
 
-### If you use [`@smplcty/schema-flow`](https://www.npmjs.com/package/@smplcty/schema-flow)
-
-Copy the shipped files into your own schema directory:
-
-```sh
-cp node_modules/@smplcty/auth/schema/tables/*.yaml schema/tables/
-npx @smplcty/schema-flow run
+```yaml
+default:
+  imports:
+    - package: '@smplcty/schema-std' # generic mixins, parameterized to users / user_id / app.actor_id
+    - package: '@smplcty/auth' # identity/tenant/auth_domains tables + resolve_session/current_user_id
 ```
 
-You can edit the copies if you need additional columns (e.g. add a `last_seen_at` to `sessions`) — just keep the columns the library reads/writes intact.
+The `audit` mixin makes `created_by`/`updated_by` NOT NULL, stamped from `app.actor_id`. Rows seeded during migration have no request actor, so the shipped `post/` script back-fills them to the seeded `app-init` service user (`users.user_id = 1`) before the NOT NULL tighten phase — see the config for details.
 
-### If you use any other migration tool (Drizzle, Prisma, hand-rolled SQL, …)
+### Soft delete
 
-Translate the YAML manually. The equivalent DDL is:
+Every table carries the `soft_delete` mixin (`deleted_at`). The library **honors** it — `resolve_session`, `validateSession`, `findUserByCommunicationMethod`, `getUserRoleNames`, and the flat-tenant preset all exclude soft-deleted rows — so a soft-deleted session, user, communication method, or role assignment stops taking effect immediately. Unique indexes are partial (`WHERE deleted_at IS NULL`) so a name/code can be reused after its row is archived. Setting/clearing `deleted_at` is a plain write your app owns; the library ships no delete setter. (Note: writing `deleted_at` on an _audited_ table goes through the audit trigger, so set `app.actor_id` first — e.g. inside `withSession`/`withServiceContext`.)
 
-```sql
-CREATE TABLE tenants (
-  tenant_id    SERIAL PRIMARY KEY,
-  name         TEXT NOT NULL UNIQUE
-);
+### Functions the library calls
 
-CREATE TABLE roles (
-  role_id      SERIAL PRIMARY KEY,
-  name         TEXT NOT NULL UNIQUE
-);
-INSERT INTO roles (role_id, name) VALUES
-  (1, 'user'),
-  (2, 'settings'),
-  (3, 'security')
-ON CONFLICT (role_id) DO NOTHING;
-
-CREATE TABLE users (
-  user_id      SERIAL PRIMARY KEY,
-  name         TEXT
-);
-
-CREATE TABLE communication_channels (
-  communication_channel_id  SERIAL PRIMARY KEY,
-  name                      TEXT NOT NULL UNIQUE
-);
-
-CREATE TABLE user_communication_methods (
-  user_communication_method_id  SERIAL PRIMARY KEY,
-  user_id                       INT NOT NULL REFERENCES users(user_id),
-  communication_channel_id      INT NOT NULL REFERENCES communication_channels(communication_channel_id),
-  code                          TEXT NOT NULL,
-  UNIQUE (communication_channel_id, code)
-);
-
-CREATE TABLE user_roles (
-  user_role_id  SERIAL PRIMARY KEY,
-  user_id       INT NOT NULL REFERENCES users(user_id),
-  role_id       INT NOT NULL REFERENCES roles(role_id),
-  tenant_id     INT REFERENCES tenants(tenant_id)  -- NULL = global / all tenants
-);
-
-CREATE TABLE sessions (
-  session_id                    TEXT PRIMARY KEY,
-  user_communication_method_id  INT NOT NULL REFERENCES user_communication_methods(user_communication_method_id),
-  created_at                    TIMESTAMPTZ NOT NULL DEFAULT now(),
-  expires_at                    TIMESTAMPTZ NOT NULL,
-  ip                            TEXT,
-  city                          TEXT,
-  region                        TEXT,
-  country                       TEXT,
-  latitude                      TEXT,
-  longitude                     TEXT
-);
-```
-
-The DDL above is kept in sync with the shipped YAML files by hand. If you're paranoid about drift between this snippet and what the library actually requires, copy the YAML files instead — they are the source of truth.
-
-The library also expects four custom Postgres session variables to be readable from your RLS policies:
-
-| GUC               | Set by                                                | Type                                                 |
-| ----------------- | ----------------------------------------------------- | ---------------------------------------------------- |
-| `app.session_id`  | `setSessionId` / `setSessionContext` / `withSession`  | text                                                 |
-| `app.role_name`   | `setRoleName` / `setSessionContext` / `withSession`   | text                                                 |
-| `app.tenant_ids`  | `setTenantIds` / `setSessionContext` / `withSession`  | comma-separated text (parsed into int[] in policies) |
-| `app.all_tenants` | `setAllTenants` / `setSessionContext` / `withSession` | text `'true'` or `'false'`                           |
-
-These are set with **transaction scope** (`set_config(name, value, true)`) and discarded automatically on COMMIT or ROLLBACK.
+| Function                | Role                                                                                                                                                                     |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `resolve_session(hash)` | SECURITY DEFINER **pure resolver** → `{ user_id, expires_at, roles[], default_role, privileges[] }`; validates nothing (validation/role-selection live in `withSession`) |
+| `current_user_id()`     | reads `app.actor_id` — the join key app RLS/scope functions should use                                                                                                   |
 
 ## Security model
 
-- Every parameterized query — no string interpolation anywhere in the library.
-- Session variables set via `set_config($1, $2, true)`, not `SET ... TO ...` with concatenation. SQL injection in session/role names is impossible.
-- Transaction scope on every session variable. Cross-request leaks are impossible.
-- `withSession` validates session existence, expiration, and role assignment before running the callback. Fails closed on any check.
-- `crypto.randomUUID()` for session IDs (122 bits of entropy).
-- No `console.*` calls in library code. PII in logs is the consumer's choice, not the library's default.
-- No transitive runtime dependencies — only `pg` as a peer dependency.
+- Every query parameterized — no string interpolation in the library.
+- **Session tokens hashed at rest** (SHA-256); the raw 256-bit token is returned once and never stored. A DB leak exposes only hashes.
+- Identity GUCs set via `set_config($1, $2, true)`, transaction-scoped — injection and cross-request leakage are impossible.
+- `withSession` validates existence, expiry/revocation, and role membership before running the callback. Fails closed.
+- Force sign-off is a row update (per-session, per-user, or per-tenant); role/privilege changes apply on the next request.
+- Auth core has no `jose`/Twilio dependency; method handlers are opt-in subpaths with optional peers.
 
 ## License
 

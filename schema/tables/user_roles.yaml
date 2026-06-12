@@ -1,4 +1,5 @@
 table: user_roles
+mixins: [audit, soft_delete]
 columns:
   - name: user_role_id
     type: serial

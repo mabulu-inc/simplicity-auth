@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
   createSession,
-  RoleNotAssignedError,
+  RoleNotHeldError,
   SessionExpiredError,
   SessionNotFoundError,
   withSession,
@@ -23,88 +23,58 @@ describe('withSession', () => {
     await db.resetSessions();
   });
 
-  it('runs the callback with a fully resolved single-tenant context', async () => {
-    const session = await createSession(db.pool, {
-      userCommunicationMethodId: 1,
-      ttl: '1 hour',
-    });
+  it('runs the callback with a resolved identity context', async () => {
+    const session = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 hour' });
 
-    const ctx = await withSession(
-      db.pool,
-      { sessionId: session.sessionId, roleName: 'user' },
-      async (_client, ctx) => ctx,
-    );
-
-    expect(ctx.userId).toBe(1);
-    expect([...ctx.tenantIds]).toEqual([1]);
-    expect(ctx.allTenants).toBe(false);
-    expect(ctx.roles).toContain('user');
-  });
-
-  it('returns multi-tenant tenantIds for a user with roles in multiple tenants', async () => {
-    const session = await createSession(db.pool, {
-      userCommunicationMethodId: 2,
-      ttl: '1 hour',
-    });
-
-    const ctx = await withSession(
-      db.pool,
-      { sessionId: session.sessionId, roleName: 'user' },
-      async (_client, ctx) => ctx,
-    );
+    const ctx = await withSession(db.pool, { token: session.token, roleName: 'user' }, async (_client, ctx) => ctx);
 
     expect(ctx.userId).toBe(2);
-    expect([...ctx.tenantIds].sort()).toEqual([1, 2]);
-    expect(ctx.allTenants).toBe(false);
+    expect(ctx.activeRole).toBe('user');
+    expect(ctx.roles).toContain('user');
+    expect(ctx.privileges).toEqual([]);
   });
 
-  it('sets allTenants=true for a global admin (NULL tenant_id)', async () => {
-    const session = await createSession(db.pool, {
-      userCommunicationMethodId: 3,
-      ttl: '1 hour',
-    });
+  it('selects the default role when no roleName is requested', async () => {
+    const session = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 hour' });
 
-    const ctx = await withSession(
-      db.pool,
-      { sessionId: session.sessionId, roleName: 'settings' },
-      async (_client, ctx) => ctx,
-    );
+    // Alice holds 'user', which is the is_default role.
+    const ctx = await withSession(db.pool, { token: session.token }, async (_client, ctx) => ctx);
 
-    expect(ctx.userId).toBe(3);
-    expect(ctx.allTenants).toBe(true);
-    expect(ctx.roles).toContain('settings');
+    expect(ctx.activeRole).toBe('user');
   });
 
-  it('sets the four session variables on the transaction-bound client', async () => {
-    const session = await createSession(db.pool, {
-      userCommunicationMethodId: 1,
-      ttl: '1 hour',
-    });
+  it('sets the four identity GUCs on the transaction-bound client', async () => {
+    const session = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 hour' });
 
-    await withSession(db.pool, { sessionId: session.sessionId, roleName: 'user' }, async (client) => {
-      const { rows } = await client.query<{
-        s: string;
-        r: string;
-        t: string;
-        a: string;
-      }>(
+    await withSession(db.pool, { token: session.token, roleName: 'user' }, async (client) => {
+      const { rows } = await client.query<{ actor: string; sess: string; role: string; privs: string }>(
         `SELECT
-            current_setting('app.session_id', true) AS s,
-            current_setting('app.role_name', true)  AS r,
-            current_setting('app.tenant_ids', true) AS t,
-            current_setting('app.all_tenants', true) AS a`,
+            current_setting('app.actor_id', true)    AS actor,
+            current_setting('app.session_id', true)  AS sess,
+            current_setting('app.active_role', true) AS role,
+            current_setting('app.privileges', true)  AS privs`,
       );
-      expect(rows[0]?.s).toBe(session.sessionId);
-      expect(rows[0]?.r).toBe('user');
-      expect(rows[0]?.t).toBe('1');
-      expect(rows[0]?.a).toBe('false');
+      expect(rows[0]?.actor).toBe('2');
+      // app.session_id is the token hash (64 hex chars), never the raw token.
+      expect(rows[0]?.sess).toMatch(/^[0-9a-f]{64}$/);
+      expect(rows[0]?.sess).not.toBe(session.token);
+      expect(rows[0]?.role).toBe('user');
+      expect(rows[0]?.privs).toBe('');
     });
   });
 
-  it('throws SessionNotFoundError before invoking fn for unknown session', async () => {
+  it('current_user_id() reflects app.actor_id inside the request', async () => {
+    const session = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 hour' });
+    await withSession(db.pool, { token: session.token, roleName: 'user' }, async (client) => {
+      const { rows } = await client.query<{ id: number }>('SELECT current_user_id() AS id');
+      expect(rows[0]?.id).toBe(2);
+    });
+  });
+
+  it('throws SessionNotFoundError before invoking fn for an unknown token', async () => {
     let called = false;
     await expect(
-      withSession(db.pool, { sessionId: '00000000-0000-0000-0000-000000000000', roleName: 'user' }, async () => {
+      withSession(db.pool, { token: 'not-a-real-token', roleName: 'user' }, async () => {
         called = true;
       }),
     ).rejects.toBeInstanceOf(SessionNotFoundError);
@@ -112,36 +82,38 @@ describe('withSession', () => {
   });
 
   it('throws SessionExpiredError when expires_at has passed', async () => {
-    const session = await createSession(db.pool, {
-      userCommunicationMethodId: 1,
-      ttl: '1 hour',
-    });
-    await db.pool.query(`UPDATE sessions SET expires_at = now() - interval '1 minute' WHERE session_id = $1`, [
-      session.sessionId,
-    ]);
+    const session = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 hour' });
+    await db.pool.query(`UPDATE sessions SET expires_at = now() - interval '1 minute'`);
     await expect(
-      withSession(db.pool, { sessionId: session.sessionId, roleName: 'user' }, async () => 'never reached'),
+      withSession(db.pool, { token: session.token, roleName: 'user' }, async () => 'never reached'),
     ).rejects.toBeInstanceOf(SessionExpiredError);
   });
 
-  it('throws RoleNotAssignedError when the user lacks the requested role', async () => {
-    const session = await createSession(db.pool, {
-      userCommunicationMethodId: 1,
-      ttl: '1 hour',
-    });
-    // Alice has 'user' but not 'settings'
+  it('throws RoleNotHeldError when the user lacks the requested role', async () => {
+    const session = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 hour' });
+    // Alice has 'user' but not 'settings'.
     await expect(
-      withSession(db.pool, { sessionId: session.sessionId, roleName: 'settings' }, async () => 'never reached'),
-    ).rejects.toBeInstanceOf(RoleNotAssignedError);
+      withSession(db.pool, { token: session.token, roleName: 'settings' }, async () => 'never reached'),
+    ).rejects.toBeInstanceOf(RoleNotHeldError);
+  });
+
+  it('runs the scope hook after identity GUCs are set', async () => {
+    const session = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 hour' });
+    let seenActor: string | undefined;
+    await withSession(db.pool, { token: session.token, roleName: 'user' }, async () => {}, {
+      scope: async (client, identity) => {
+        expect(identity.userId).toBe(2);
+        const { rows } = await client.query<{ actor: string }>(`SELECT current_setting('app.actor_id', true) AS actor`);
+        seenActor = rows[0]?.actor;
+      },
+    });
+    expect(seenActor).toBe('2');
   });
 
   it('rolls back the transaction when fn throws', async () => {
-    const session = await createSession(db.pool, {
-      userCommunicationMethodId: 1,
-      ttl: '1 hour',
-    });
+    const session = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 hour' });
     await expect(
-      withSession(db.pool, { sessionId: session.sessionId, roleName: 'user' }, async (client) => {
+      withSession(db.pool, { token: session.token, roleName: 'user' }, async (client) => {
         await client.query(`INSERT INTO tenants (name) VALUES ('with-session-rollback')`);
         throw new Error('boom');
       }),
@@ -153,35 +125,27 @@ describe('withSession', () => {
     expect(rows[0]?.n).toBe(0);
   });
 
-  it('does not leak session variables to subsequent transactions', async () => {
-    const session = await createSession(db.pool, {
-      userCommunicationMethodId: 2, // Bob, multi-tenant
-      ttl: '1 hour',
-    });
+  it('does not leak identity GUCs to subsequent transactions', async () => {
+    const session = await createSession(db.pool, { userCommunicationMethodId: 2, ttl: '1 hour' });
 
     const pool = new (await import('pg')).default.Pool({
       connectionString: db.connectionString,
       max: 1,
+      options: `-c search_path=${db.schema}`,
     });
     try {
-      await withSession(pool, { sessionId: session.sessionId, roleName: 'user' }, async () => {});
+      await withSession(pool, { token: session.token, roleName: 'user' }, async () => {});
 
-      // Now use the same connection for a non-withSession query
       const client = await pool.connect();
       try {
-        const { rows } = await client.query<{
-          s: string;
-          r: string;
-          t: string;
-          a: string;
-        }>(
+        const { rows } = await client.query<{ actor: string; sess: string; role: string; privs: string }>(
           `SELECT
-            current_setting('app.session_id', true) AS s,
-            current_setting('app.role_name', true)  AS r,
-            current_setting('app.tenant_ids', true) AS t,
-            current_setting('app.all_tenants', true) AS a`,
+            current_setting('app.actor_id', true)    AS actor,
+            current_setting('app.session_id', true)  AS sess,
+            current_setting('app.active_role', true) AS role,
+            current_setting('app.privileges', true)  AS privs`,
         );
-        expect(rows[0]).toEqual({ s: '', r: '', t: '', a: '' });
+        expect(rows[0]).toEqual({ actor: '', sess: '', role: '', privs: '' });
       } finally {
         client.release();
       }
@@ -191,13 +155,8 @@ describe('withSession', () => {
   });
 
   it('returns the value produced by fn', async () => {
-    const session = await createSession(db.pool, {
-      userCommunicationMethodId: 1,
-      ttl: '1 hour',
-    });
-    const value = await withSession(db.pool, { sessionId: session.sessionId, roleName: 'user' }, async () => ({
-      answer: 42,
-    }));
+    const session = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 hour' });
+    const value = await withSession(db.pool, { token: session.token, roleName: 'user' }, async () => ({ answer: 42 }));
     expect(value).toEqual({ answer: 42 });
   });
 });

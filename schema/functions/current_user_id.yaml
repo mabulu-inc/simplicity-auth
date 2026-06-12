@@ -1,0 +1,18 @@
+name: current_user_id
+language: sql
+volatility: stable
+# Reads the per-request actor from the app.actor_id GUC (set by
+# withSession / withServiceContext). This is the join key for app RLS and
+# scope functions: policies that need "the current user" call this rather
+# than re-reading the GUC themselves.
+#
+# Returns NULL when no actor is set (unauthenticated / outside a request
+# context) — RLS policies treat a NULL current user as "see nothing".
+returns: integer
+args: []
+body: |
+  SELECT NULLIF(current_setting('app.actor_id', true), '')::integer;
+comment: >
+  Returns the current request's actor (users.user_id) from the
+  app.actor_id GUC, or NULL if unset. The stable, RLS-friendly accessor
+  app scope functions key on.

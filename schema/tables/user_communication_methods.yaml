@@ -1,4 +1,5 @@
 table: user_communication_methods
+mixins: [soft_delete]
 columns:
   - name: user_communication_method_id
     type: serial
@@ -18,6 +19,9 @@ columns:
   - name: code
     type: text
     nullable: false
-unique_constraints:
+indexes:
+  # Partial so a (channel, code) can be reused after the row is soft-deleted.
   - columns: [communication_channel_id, code]
+    unique: true
+    where: 'deleted_at IS NULL'
     name: user_communication_methods_channel_code_key

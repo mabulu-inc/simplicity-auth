@@ -8,6 +8,12 @@ importers:
 
   .:
     dependencies:
+      '@smplcty/db':
+        specifier: ^4.2.0
+        version: 4.2.0(pg@8.20.0)
+      '@smplcty/schema-std':
+        specifier: ^0.0.1
+        version: 0.0.1
       otplib:
         specifier: ^13.4.0
         version: 13.4.0
@@ -18,9 +24,15 @@ importers:
       '@release-it/keep-a-changelog':
         specifier: ^7.1.0
         version: 7.1.0(release-it@20.2.0(@types/node@25.5.2))
+      '@smplcty/oidc':
+        specifier: ^0.2.0
+        version: 0.2.0(pg@8.20.0)
       '@smplcty/schema-flow':
-        specifier: ^0.3.7
-        version: 0.3.7
+        specifier: ^0.11.2
+        version: 0.11.2
+      '@smplcty/twilio':
+        specifier: ^0.1.1
+        version: 0.1.1
       '@types/node':
         specifier: ^25.5.2
         version: 25.5.2
@@ -446,10 +458,30 @@ packages:
   '@scure/base@2.0.0':
     resolution: {integrity: sha512-3E1kpuZginKkek01ovG8krQ0Z44E3DHPjc5S2rjJw9lZn3KSQOs8S7wqikF/AH7iRanHypj85uGyxk0XAyC37w==}
 
-  '@smplcty/schema-flow@0.3.7':
-    resolution: {integrity: sha512-RWFGtKA4E5iF9FhZkyYdM6pCbPoSU9d8II/fQmXExYjzE/FmQxIy0D3DaRICi0/m112ybQItaK3tJgfcwoGjVw==}
+  '@smplcty/db@4.2.0':
+    resolution: {integrity: sha512-XKIhHH6msxNFexjkJe4FP20b3MYNCwtWk+Ak9GbnNzMI1U4KxfnkkfVpmihnxcCWw2vGpGhrfN4EF5R7bVnafg==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      pg: '>=8.0.0'
+
+  '@smplcty/oidc@0.2.0':
+    resolution: {integrity: sha512-P9ULFCz1FmZBeCIFxiZ+FOBdp+eD4d7FT/00H4u7vV5cGg+UfEJyOlSRBOEDKnGI1bjFQLodyrUnNOr3yzhc2A==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      pg: '>=8.0.0'
+
+  '@smplcty/schema-flow@0.11.2':
+    resolution: {integrity: sha512-nZ1wHB0b69vSCAKROJJcepv55h7vVqNdAEk4NXsK425PaQECi+s5qeVh5kX9WBq5YiDCYBfYnjZn44voxTVYiw==}
     engines: {node: '>=20'}
     hasBin: true
+
+  '@smplcty/schema-std@0.0.1':
+    resolution: {integrity: sha512-EwlZw5a7+ue4RWNlGGq6tVvaJpuiyGJ3w+MNNA7ovGPAnA7VmGoIUVp/q8I13WsalRzq6cvs/DV5qflxNR3FGA==}
+    engines: {node: '>=20'}
+
+  '@smplcty/twilio@0.1.1':
+    resolution: {integrity: sha512-tSLOlFPmvo3SpouYwNu8XdQwbaWqCFZWFbXUn/lNZojtxr0hNKVmv2pXGS+12uRS124QBz/5DVIcCP62ZtMCHQ==}
+    engines: {node: '>=20'}
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
@@ -987,6 +1019,9 @@ packages:
   jiti@2.6.1:
     resolution: {integrity: sha512-ekilCSN1jwRvIbgeg/57YFh8qQDNbwDb9xT/qu2DAHbFFZUicIl4ygVaAvzveMhMVr3LnpSKTNnwt8PoOfmKhQ==}
     hasBin: true
+
+  jose@6.2.3:
+    resolution: {integrity: sha512-YYVDInQKFJfR/xa3ojUTl8c2KoTwiL1R5Wg9YCydwH0x0B9grbzlg5HC7mMjCtUJjbQ/YnGEZIhI5tCgfTb4Hw==}
 
   json-buffer@3.0.1:
     resolution: {integrity: sha512-4bV5BfR2mqfQTJm+V5tPPdf+ZpuhiIvTuAB5g8kcrXOZpTT/QwwVRWBywX1ozr6lEuPdbHxwaJlm9G6mI2sfSQ==}
@@ -1658,11 +1693,6 @@ packages:
     resolution: {integrity: sha512-LKYU1iAXJXUgAXn9URjiu+MWhyUXHsvfp7mcuYm9dSUKK0/CjtrUwFAxD82/mCWbtLsGjFIad0wIsod4zrTAEQ==}
     engines: {node: '>=0.4'}
 
-  yaml@2.8.3:
-    resolution: {integrity: sha512-AvbaCLOO2Otw/lW5bmh9d/WEdcDFdQp2Z2ZUH3pX9U2ihyUY0nvLv7J6TrWowklRGPYbB/IuIMfYgxaCPg5Bpg==}
-    engines: {node: '>= 14.6'}
-    hasBin: true
-
   yaml@2.9.0:
     resolution: {integrity: sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==}
     engines: {node: '>= 14.6'}
@@ -2027,14 +2057,27 @@ snapshots:
 
   '@scure/base@2.0.0': {}
 
-  '@smplcty/schema-flow@0.3.7':
+  '@smplcty/db@4.2.0(pg@8.20.0)':
+    dependencies:
+      pg: 8.20.0
+
+  '@smplcty/oidc@0.2.0(pg@8.20.0)':
+    dependencies:
+      jose: 6.2.3
+      pg: 8.20.0
+
+  '@smplcty/schema-flow@0.11.2':
     dependencies:
       chalk: 5.6.2
       glob: 13.0.6
       pg: 8.20.0
-      yaml: 2.8.3
+      yaml: 2.9.0
     transitivePeerDependencies:
       - pg-native
+
+  '@smplcty/schema-std@0.0.1': {}
+
+  '@smplcty/twilio@0.1.1': {}
 
   '@standard-schema/spec@1.1.0': {}
 
@@ -2585,6 +2628,8 @@ snapshots:
       lodash.uniqby: 4.7.0
 
   jiti@2.6.1: {}
+
+  jose@6.2.3: {}
 
   json-buffer@3.0.1: {}
 
@@ -3205,10 +3250,7 @@ snapshots:
 
   xtend@4.0.2: {}
 
-  yaml@2.8.3: {}
-
-  yaml@2.9.0:
-    optional: true
+  yaml@2.9.0: {}
 
   yargs-parser@22.0.0: {}
 

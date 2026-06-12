@@ -11,6 +11,21 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./oidc": {
+      "types": "./dist/methods/oidc/index.d.ts",
+      "import": "./dist/methods/oidc/index.js",
+      "default": "./dist/methods/oidc/index.js"
+    },
+    "./twilio": {
+      "types": "./dist/methods/twilio/index.d.ts",
+      "import": "./dist/methods/twilio/index.js",
+      "default": "./dist/methods/twilio/index.js"
+    },
+    "./flat-tenant": {
+      "types": "./dist/scope/flat-tenant.d.ts",
+      "import": "./dist/scope/flat-tenant.js",
+      "default": "./dist/scope/flat-tenant.js"
     }
   },
   "files": [
@@ -70,12 +85,24 @@
     ]
   },
   "peerDependencies": {
+    "@smplcty/oidc": ">=0.2.0",
+    "@smplcty/twilio": ">=0.1.0",
     "pg": ">=8.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@smplcty/oidc": {
+      "optional": true
+    },
+    "@smplcty/twilio": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@release-it/keep-a-changelog": "^7.1.0",
-    "@smplcty/schema-flow": "^0.3.7",
+    "@smplcty/oidc": "^0.2.0",
+    "@smplcty/schema-flow": "^0.11.2",
+    "@smplcty/twilio": "^0.1.1",
     "@types/node": "^25.5.2",
     "@types/pg": "^8.20.0",
     "eslint": "^10.2.0",
@@ -89,6 +116,8 @@
     "vitest": "^4.1.4"
   },
   "dependencies": {
+    "@smplcty/db": "^4.2.0",
+    "@smplcty/schema-std": "^0.0.1",
     "otplib": "^13.4.0"
   }
 }

@@ -4,30 +4,55 @@ import { InvalidInputError } from './errors.js';
 const SET_CONFIG = 'SELECT set_config($1, $2, true)';
 
 /**
- * The four GUC variable names this library uses. Re-exported here in
- * case consumers need them in custom RLS policies.
+ * The identity GUC contract — the only GUCs `@smplcty/auth` sets. All are
+ * transaction-local (`set_config(name, value, true)`), so they're
+ * discarded automatically on COMMIT/ROLLBACK; cross-request leakage is
+ * impossible. Re-exported so consumers can reference them in RLS policies.
+ *
+ * Scope GUCs (tenant ids, plant/region scope, visible rep ids, …) are
+ * **not** here — intra-tenant scope is app-owned (set via the scope hook).
+ *
+ * - `app.actor_id`    — the acting user (human or service). Powers
+ *   `current_user_id()` and audit attribution.
+ * - `app.session_id`  — the session hash, for correlation/audit.
+ * - `app.active_role` — the chosen mode/persona role for the request.
+ * - `app.privileges`  — comma-separated privilege names the user holds.
  */
-export const SESSION_VAR_NAMES = {
+export const IDENTITY_GUC = {
+  actorId: 'app.actor_id',
   sessionId: 'app.session_id',
-  roleName: 'app.role_name',
-  tenantIds: 'app.tenant_ids',
-  allTenants: 'app.all_tenants',
+  activeRole: 'app.active_role',
+  privileges: 'app.privileges',
 } as const;
 
 /**
- * Set `app.session_id` for the current transaction.
+ * Set a single transaction-local GUC. Low-level escape hatch; prefer the
+ * named setters or `setIdentityContext`.
  *
- * **Contract:** `client` must be inside an open transaction. Either wrap
- * with `withTransaction(pool, fn)` or call `await client.query('BEGIN')`
- * yourself first.
+ * **Contract:** `client` must be inside an open transaction.
+ */
+export async function setLocal(client: PoolClient, name: string, value: string): Promise<void> {
+  if (typeof name !== 'string' || name.length === 0) {
+    throw new InvalidInputError('GUC name must be a non-empty string');
+  }
+  await client.query(SET_CONFIG, [name, value]);
+}
+
+/**
+ * Set `app.actor_id` — the user (or service principal) performing the
+ * request. `current_user_id()` and the audit trigger read it.
  *
- * The variable is set with transaction scope (`set_config(name, value, true)`)
- * and is automatically discarded on COMMIT or ROLLBACK. There is no risk
- * of cross-request leakage.
- *
- * **Warning:** This helper does not validate that the session exists or
- * is unexpired. Use `validateSession` or `withSession` if you want
- * automatic verification.
+ * @throws {InvalidInputError} If `actorId` is not a positive integer.
+ */
+export async function setActorId(client: PoolClient, actorId: number): Promise<void> {
+  if (!Number.isInteger(actorId) || actorId <= 0) {
+    throw new InvalidInputError('actorId must be a positive integer');
+  }
+  await client.query(SET_CONFIG, [IDENTITY_GUC.actorId, String(actorId)]);
+}
+
+/**
+ * Set `app.session_id` (the session hash) for correlation/audit.
  *
  * @throws {InvalidInputError} If `sessionId` is not a non-empty string.
  */
@@ -35,85 +60,60 @@ export async function setSessionId(client: PoolClient, sessionId: string): Promi
   if (typeof sessionId !== 'string' || sessionId.length === 0) {
     throw new InvalidInputError('sessionId must be a non-empty string');
   }
-  await client.query(SET_CONFIG, [SESSION_VAR_NAMES.sessionId, sessionId]);
+  await client.query(SET_CONFIG, [IDENTITY_GUC.sessionId, sessionId]);
 }
 
 /**
- * Set `app.role_name` for the current transaction.
+ * Set `app.active_role` — the mode/persona role for this request. Pass
+ * null to clear it (privilege-only request).
  *
- * **Contract:** `client` must be inside an open transaction.
- *
- * **Warning:** This helper does not verify that the requested role is
- * one the current session is allowed to use. The caller is responsible
- * for not passing user-supplied input directly. Use `withSession` to get
- * automatic role validation against the database.
- *
- * @typeParam TRole - String literal union of roles in your application.
- *   Defaults to `string`. Narrow this in a thin wrapper.
- * @throws {InvalidInputError} If `roleName` is not a non-empty string.
+ * @throws {InvalidInputError} If `roleName` is neither a non-empty string nor null.
  */
-export async function setRoleName<TRole extends string = string>(client: PoolClient, roleName: TRole): Promise<void> {
-  if (typeof roleName !== 'string' || roleName.length === 0) {
-    throw new InvalidInputError('roleName must be a non-empty string');
+export async function setActiveRole(client: PoolClient, roleName: string | null): Promise<void> {
+  if (roleName !== null && (typeof roleName !== 'string' || roleName.length === 0)) {
+    throw new InvalidInputError('roleName must be a non-empty string or null');
   }
-  await client.query(SET_CONFIG, [SESSION_VAR_NAMES.roleName, roleName]);
+  await client.query(SET_CONFIG, [IDENTITY_GUC.activeRole, roleName ?? '']);
 }
 
 /**
- * Set `app.tenant_ids` for the current transaction. The value is encoded
- * as a comma-separated string of integers (so RLS policies can parse it
- * with `string_to_array`). Empty arrays produce an empty string.
+ * Set `app.privileges` — a comma-separated list of the privilege names the
+ * user holds. RLS policies parse it with `string_to_array(_, ',')`.
  *
- * **Contract:** `client` must be inside an open transaction.
- *
- * @throws {InvalidInputError} If any element of `tenantIds` is not a finite integer.
+ * @throws {InvalidInputError} If `privileges` is not an array of strings,
+ *   or any entry contains a comma.
  */
-export async function setTenantIds(client: PoolClient, tenantIds: readonly number[]): Promise<void> {
-  if (!Array.isArray(tenantIds)) {
-    throw new InvalidInputError('tenantIds must be an array of integers');
+export async function setPrivileges(client: PoolClient, privileges: readonly string[]): Promise<void> {
+  if (!Array.isArray(privileges)) {
+    throw new InvalidInputError('privileges must be an array of strings');
   }
-  for (const id of tenantIds) {
-    if (!Number.isInteger(id)) {
-      throw new InvalidInputError(`tenantIds must contain only integers; got ${String(id)}`);
+  for (const p of privileges) {
+    if (typeof p !== 'string' || p.length === 0) {
+      throw new InvalidInputError('privileges must contain only non-empty strings');
+    }
+    if (p.includes(',')) {
+      throw new InvalidInputError(`privilege names must not contain commas; got "${p}"`);
     }
   }
-  await client.query(SET_CONFIG, [SESSION_VAR_NAMES.tenantIds, tenantIds.join(',')]);
+  await client.query(SET_CONFIG, [IDENTITY_GUC.privileges, privileges.join(',')]);
 }
 
 /**
- * Set `app.all_tenants` for the current transaction. When `true`, RLS
- * policies typically bypass tenant filtering and allow access to every
- * tenant's rows.
- *
- * **Contract:** `client` must be inside an open transaction.
- *
- * @throws {InvalidInputError} If `allTenants` is not a boolean.
- */
-export async function setAllTenants(client: PoolClient, allTenants: boolean): Promise<void> {
-  if (typeof allTenants !== 'boolean') {
-    throw new InvalidInputError('allTenants must be a boolean');
-  }
-  await client.query(SET_CONFIG, [SESSION_VAR_NAMES.allTenants, allTenants ? 'true' : 'false']);
-}
-
-/**
- * Set all four session variables in one call. Equivalent to calling
- * `setSessionId`, `setRoleName`, `setTenantIds`, and `setAllTenants`
- * sequentially, but more concise.
+ * Set all four identity GUCs in one call.
  *
  * **Contract:** `client` must be inside an open transaction.
  */
-export async function setSessionContext<TRole extends string = string>(
+export async function setIdentityContext(
   client: PoolClient,
   context: {
+    actorId: number;
     sessionId: string;
-    roleName: TRole;
-    tenantIds: readonly number[];
-    allTenants: boolean;
+    activeRole: string | null;
+    privileges: readonly string[];
   },
 ): Promise<void> {
+  await setActorId(client, context.actorId);
   await setSessionId(client, context.sessionId);
-  await setRoleName(client, context.roleName);
-  await setTenantIds(client, context.tenantIds);
-  await setAllTenants(client, context.allTenants);
+  await setActiveRole(client, context.activeRole);
+  await setPrivileges(client, context.privileges);
 }

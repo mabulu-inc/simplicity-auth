@@ -14,27 +14,29 @@ describe('getUserRoleNames', () => {
   });
 
   it('returns roles for a single-tenant user', async () => {
-    // Alice (userId 1) has the 'user' role on tenant 1
-    const roles = await getUserRoleNames(db.pool, 1);
-    expect(roles).toEqual(['user']);
-  });
-
-  it('returns deduplicated roles for a multi-tenant user', async () => {
-    // Bob (userId 2) has the 'user' role on tenants 1 and 2 — should
-    // come back as a single 'user' entry, not two.
+    // Alice (userId 2) has the 'user' role on tenant 1
     const roles = await getUserRoleNames(db.pool, 2);
     expect(roles).toEqual(['user']);
   });
 
-  it('returns the correct role for a global admin', async () => {
-    // GlobalAdmin (userId 3) has the 'settings' role with null tenant
+  it('returns deduplicated roles for a multi-tenant user', async () => {
+    // Bob (userId 3) has the 'user' role on tenants 1 and 2 (deduped to a
+    // single entry) plus the 'can_export' privilege. getUserRoleNames
+    // returns every role row the user holds — privileges included —
+    // alphabetically.
     const roles = await getUserRoleNames(db.pool, 3);
+    expect(roles).toEqual(['can_export', 'user']);
+  });
+
+  it('returns the correct role for a global admin', async () => {
+    // GlobalAdmin (userId 4) has the 'settings' role with null tenant
+    const roles = await getUserRoleNames(db.pool, 4);
     expect(roles).toEqual(['settings']);
   });
 
   it('returns an empty array for a user with no roles', async () => {
-    // NoRoles (userId 4) has no user_roles rows
-    const roles = await getUserRoleNames(db.pool, 4);
+    // NoRoles (userId 5) has no user_roles rows
+    const roles = await getUserRoleNames(db.pool, 5);
     expect(roles).toEqual([]);
   });
 

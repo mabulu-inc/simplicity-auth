@@ -1,7 +1,34 @@
 table: users
+# Auditable. The `audit` mixin is consumed from @smplcty/schema-std and adds
+# created_at / updated_at / created_by / updated_by (the _by columns FK back
+# to users — a self-reference). The audit triggers stamp created_by/updated_by
+# from app.actor_id, so seeding any user requires an actor: see the app-init
+# seed below + the perTxSqlPath note in schema-flow.config.yaml.
+mixins: [audit, soft_delete]
 columns:
   - name: user_id
     type: serial
     primary_key: true
   - name: name
     type: text
+  # 'human'   → a person who signs in and holds a session.
+  # 'service' → a background principal (ingestion, transform-worker,
+  #   app-init). Service rows are the actor for background writes so
+  #   audit attribution (app.actor_id) is never NULL. They never own a
+  #   session. See withServiceContext.
+  - name: kind
+    type: text
+    nullable: false
+    default: "'human'"
+    check: "kind IN ('human', 'service')"
+# The bootstrap principal. user_id=1 is the app-init service user: the actor
+# every migration-time seed (this row, the standard roles, any consumer seeds)
+# is attributed to via app.actor_id. It seeds first (users seed before tables
+# that FK to it), and stamps its own created_by=1 (the self-reference resolves
+# because the row exists by the time the FK is checked). Consumers add their
+# own users at user_id >= 2.
+seeds:
+  - user_id: 1
+    name: 'app-init'
+    kind: 'service'
+seeds_on_conflict: 'DO NOTHING'

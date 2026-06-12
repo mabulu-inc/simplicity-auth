@@ -1,9 +1,6 @@
-import { randomUUID } from 'node:crypto';
 import { InvalidInputError } from './errors.js';
+import { generateToken, hashToken } from './internal/hash-token.js';
 import type { CreateSessionInput, Queryable, Session } from './types.js';
-
-const TS_SUFFIX = process.env['USE_AT_FOR_TIMESTAMPS'] !== 'false' ? '_at' : '';
-const CREATED_COL = `created${TS_SUFFIX}`;
 
 const INSERT_SESSION = `
   INSERT INTO sessions (
@@ -29,10 +26,8 @@ const INSERT_SESSION = `
     $9
   )
   RETURNING
-    session_id    AS "sessionId",
-    user_communication_method_id AS "_userCommunicationMethodId",
-    ${CREATED_COL}    AS "createdAt",
-    expires_at    AS "expiresAt"
+    created_at AS "createdAt",
+    expires_at AS "expiresAt"
 `;
 
 const SELECT_USER_ID = `
@@ -42,8 +37,6 @@ const SELECT_USER_ID = `
 `;
 
 interface InsertedSessionRow {
-  sessionId: string;
-  _userCommunicationMethodId: number;
   createdAt: Date;
   expiresAt: Date;
 }
@@ -55,16 +48,16 @@ interface UserIdRow {
 /**
  * Create a new session for an already-authenticated user.
  *
- * The caller is responsible for verifying the user's identity (via
- * Twilio Verify, OIDC callback, password check, or whatever) BEFORE
- * calling this function. `createSession` does not perform any
- * authentication of its own — it simply persists a session row and
- * returns the new session token.
+ * The caller is responsible for verifying the user's identity (via a
+ * `MethodHandler`, Twilio Verify, OIDC callback, password check, …)
+ * BEFORE calling this. `createSession` performs no authentication — it
+ * persists a session row and returns the new token.
  *
- * The session ID is generated server-side using `crypto.randomUUID()`
- * (122 bits of entropy). The expiration is computed server-side as
- * `now() + interval $ttl` so there is no clock skew between the app and
- * the database.
+ * A fresh opaque token (256 bits of entropy) is generated server-side;
+ * only its **SHA-256 hash** is stored, as the `sessions` primary key. The
+ * raw token is returned **once** in {@link Session.token} — hand it to the
+ * client and don't persist it. Expiration is computed server-side as
+ * `now() + interval $ttl` so there's no app/database clock skew.
  *
  * @example
  * ```ts
@@ -74,6 +67,7 @@ interface UserIdRow {
  *   ip: req.ip,
  *   geo: { country: 'US', region: 'CA' },
  * });
+ * setCookie('session', session.token); // raw token to the client, once
  * ```
  *
  * @throws {InvalidInputError} If `ttl` is empty or `userCommunicationMethodId` is not a positive integer.
@@ -86,7 +80,8 @@ export async function createSession(db: Queryable, input: CreateSessionInput): P
     throw new InvalidInputError('ttl must be a non-empty Postgres interval string (e.g. "30 days")');
   }
 
-  const sessionId = randomUUID();
+  const token = generateToken();
+  const sessionId = hashToken(token);
   const geo = input.geo ?? {};
 
   const { rows } = await db.query<InsertedSessionRow>(INSERT_SESSION, [
@@ -119,7 +114,7 @@ export async function createSession(db: Queryable, input: CreateSessionInput): P
   }
 
   return {
-    sessionId: row.sessionId,
+    token,
     userId: userRow.userId,
     createdAt: row.createdAt,
     expiresAt: row.expiresAt,

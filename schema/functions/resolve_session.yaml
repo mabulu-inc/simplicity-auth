@@ -2,47 +2,66 @@ name: resolve_session
 language: plpgsql
 volatility: stable
 security: definer
-returns: TABLE(user_id integer, expires_at timestamptz, tenant_ids integer[], all_tenants boolean, roles varchar[], has_requested_role boolean)
+# A PURE resolver. Given a session token hash, it returns the session's
+# user, its expiry, the user's selectable roles (split from privileges by
+# roles.is_privilege), and the user's privileges. It takes NO role
+# argument and validates NOTHING — not expiry, not revocation, not role
+# membership. All of that lives in withSession (TS), so this SECURITY
+# DEFINER surface stays a minimal read.
+#
+#   roles        — selectable mode/persona roles (is_privilege = false)
+#   default_role — the role names a NULL roleName falls back to (the first
+#                  is_default role), or NULL if the user has no default
+#   privileges   — always-on capability flags (is_privilege = true)
+#
+# Soft-delete aware: a soft-deleted session, communication method, or user
+# is treated as non-existent (excluded), and soft-deleted role assignments /
+# roles are dropped from the aggregates.
+#
+# Returns zero rows when no live session matches the hash (withSession maps
+# that to SessionNotFound). Returns one row with empty arrays when the
+# session exists but the user holds no roles.
+returns: TABLE(user_id integer, expires_at timestamptz, roles text[], default_role text, privileges text[])
 args:
-  - name: p_session_id
-    type: text
-  - name: p_role_name
+  - name: p_token_hash
     type: text
 body: |
   BEGIN
     RETURN QUERY
     WITH found_session AS (
-      SELECT s.session_id, s.expires_at, ucm.user_id
+      SELECT s.expires_at, ucm.user_id
       FROM sessions s
       JOIN user_communication_methods ucm
         ON ucm.user_communication_method_id = s.user_communication_method_id
-      WHERE s.session_id = p_session_id
+      JOIN users u ON u.user_id = ucm.user_id
+      WHERE s.session_id = p_token_hash
+        AND s.deleted_at IS NULL
+        AND ucm.deleted_at IS NULL
+        AND u.deleted_at IS NULL
     ),
-    user_role_data AS (
-      SELECT ur.user_id, ur.tenant_id, r.name AS role_name
+    role_data AS (
+      SELECT DISTINCT r.name::text AS name, r.is_default, r.is_privilege
       FROM found_session fs
-      JOIN user_roles ur ON ur.user_id = fs.user_id
-      JOIN roles r ON r.role_id = ur.role_id
+      JOIN user_roles ur ON ur.user_id = fs.user_id AND ur.deleted_at IS NULL
+      JOIN roles r ON r.role_id = ur.role_id AND r.deleted_at IS NULL
     )
     SELECT
       fs.user_id,
       fs.expires_at,
       COALESCE(
-        array_agg(DISTINCT urd.tenant_id) FILTER (WHERE urd.tenant_id IS NOT NULL),
-        '{}'::integer[]
-      ),
-      COALESCE(bool_or(urd.tenant_id IS NULL), false),
-      COALESCE(
-        array_agg(DISTINCT urd.role_name) FILTER (WHERE urd.role_name IS NOT NULL),
+        (SELECT array_agg(rd.name ORDER BY rd.name) FROM role_data rd WHERE NOT rd.is_privilege),
         '{}'::text[]
       ),
-      bool_or(urd.role_name = p_role_name)
-    FROM found_session fs
-    LEFT JOIN user_role_data urd ON urd.user_id = fs.user_id
-    GROUP BY fs.user_id, fs.expires_at;
+      (SELECT rd.name FROM role_data rd WHERE NOT rd.is_privilege AND rd.is_default ORDER BY rd.name LIMIT 1),
+      COALESCE(
+        (SELECT array_agg(rd.name ORDER BY rd.name) FROM role_data rd WHERE rd.is_privilege),
+        '{}'::text[]
+      )
+    FROM found_session fs;
   END;
 comment: >
-  SECURITY DEFINER function for resolving sessions without requiring
-  RLS GUCs to be set first. Called by withSession so app_user can
-  look up session → user → roles through RLS-protected tables.
-  Returns aggregate role/tenant info only — does not expose raw PII.
+  SECURITY DEFINER pure resolver for sessions — bypasses RLS on auth
+  tables so app_user can read session → user → roles without GUCs set
+  first. Returns aggregate role/privilege info only (no raw PII); does
+  no validation (expiry, revocation, and role selection live in
+  withSession).

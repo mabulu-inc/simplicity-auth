@@ -1,0 +1,43 @@
+table: auth_domains
+# Org-bound sign-in federation config: a tenant's IdP(s). A tenant has 0..N
+# of these (1:N) — mergers, mixed workforces, and multi-domain orgs legitimately
+# have more than one. The method router resolves sub-domain → tenant → its
+# auth_domains: exactly one ⇒ straight redirect; several ⇒ the app shows a
+# chooser (one button per row, labeled display_name, valued by auth_domain_id).
+#
+# This is SIGN-IN federation only. Tenant CRM data connections
+# (HubSpot/Salesforce sync, etc.) are a separate, app-owned concern and
+# do NOT live here. Even for the same vendor, "log in with Salesforce"
+# (a row here) and "connect our Salesforce data" are distinct configs.
+#
+# Absorbed from @smplcty/oidc by the own-domain rule: auth_domains is
+# auth's data model, so auth ships it. Rows are configured at runtime
+# (admin UI) and resolved by auth_domain_id — there is no stable text key.
+mixins: [audit, soft_delete]
+columns:
+  - name: auth_domain_id
+    type: serial
+    primary_key: true
+  - name: tenant_id
+    type: integer
+    nullable: false
+    references:
+      table: tenants
+      column: tenant_id
+  # Human label for the sign-in button when a tenant has more than one IdP
+  # (e.g. "Microsoft", "Google Workspace").
+  - name: display_name
+    type: text
+    nullable: false
+  # 'oidc' | 'saml' | … — selects the MethodHandler. The library only
+  # interprets values it ships a handler for; unknown values are an
+  # app concern.
+  - name: integration_type
+    type: text
+    nullable: false
+  # Provider config + provisioning policy (issuer, clientId, redirect URI,
+  # default roles to grant on auto-provision, …). Shape is handler-specific.
+  - name: integration_params
+    type: jsonb
+    nullable: false
+    default: "'{}'::jsonb"

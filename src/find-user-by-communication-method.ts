@@ -8,8 +8,12 @@ const SELECT_BY_COMMUNICATION_METHOD = `
   FROM user_communication_methods ucm
   JOIN communication_channels cc
     ON cc.communication_channel_id = ucm.communication_channel_id
+  JOIN users u ON u.user_id = ucm.user_id
   WHERE cc.name = $1
     AND ucm.code = $2
+    AND ucm.deleted_at IS NULL
+    AND cc.deleted_at IS NULL
+    AND u.deleted_at IS NULL
   LIMIT 1
 `;
 

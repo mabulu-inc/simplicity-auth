@@ -6,6 +6,8 @@ const SELECT_ROLE_NAMES = `
   FROM user_roles ur
   JOIN roles r ON r.role_id = ur.role_id
   WHERE ur.user_id = $1
+    AND ur.deleted_at IS NULL
+    AND r.deleted_at IS NULL
   ORDER BY r.name
 `;
 

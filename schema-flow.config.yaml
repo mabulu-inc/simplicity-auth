@@ -1,0 +1,30 @@
+# Reference schema-flow config for migrating @smplcty/auth's schema.
+#
+# Consumers (productionnow, salez1) merge this into their own config —
+# importing auth's schema/ alongside their app tables, and importing
+# @smplcty/schema-std for the generic mixins auth consumes.
+default:
+  connectionString: ${DATABASE_URL}
+  pgSchema: public
+
+  # Generic, parameterized mixins (audit / soft_delete / timestamps /
+  # audit_log) come from @smplcty/schema-std — auth consumes them like any
+  # app, supplying its own identity table + actor GUC. Defaults already match
+  # auth's convention (users / user_id / app.actor_id); params shown for
+  # clarity.
+  imports:
+    - package: '@smplcty/schema-std'
+      params:
+        user_table: users
+        user_pk: user_id
+        actor_guc: app.actor_id
+
+# The audit triggers stamp created_by/updated_by from app.actor_id, but rows
+# seeded *during* a migration have no request actor, so they land NULL.
+# schema-flow seeds tables in an order that doesn't account for the audit FK,
+# so a single pre-set actor would stamp some tables before app-init exists.
+# Instead, auth ships schema/post/0001-backfill-audit-by.sql, which calls
+# @smplcty/schema-std's audit_backfill_by() after seeds and before the NOT
+# NULL tighten phase — attributing every seeded row to the app-init service
+# principal (users.user_id=1, seeded by auth's users.yaml). Nothing else to
+# configure here; the back-fill is part of auth's shipped schema.

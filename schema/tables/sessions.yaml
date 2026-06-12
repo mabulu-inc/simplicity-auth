@@ -1,4 +1,10 @@
 table: sessions
+# soft_delete adds deleted_at. A session is invalid when EITHER expires_at
+# has passed (revokeSession sets it to now()) OR deleted_at is set — the app
+# sets deleted_at to "forget" a session/device. resolve_session and
+# validateSession honor both; the library ships no delete setter (it's a
+# plain column write the app owns).
+mixins: [soft_delete]
 columns:
   - name: session_id
     type: text
@@ -16,6 +22,10 @@ columns:
   - name: expires_at
     type: timestamptz
     nullable: false
+  # Updated by touchSession on activity. Powers the "track activity"
+  # requirement — distinct from created_at (sign-in time).
+  - name: last_seen_at
+    type: timestamptz
   - name: ip
     type: text
   - name: city

@@ -1,34 +1,42 @@
 import type { Pool, PoolClient } from 'pg';
-import { InvalidInputError } from './errors.js';
-import { SESSION_VAR_NAMES } from './set-helpers.js';
+import { withTransaction } from '@smplcty/db';
+import { InvalidInputError, ServicePrincipalNotFoundError } from './errors.js';
+import { setActorId, setSessionId } from './set-helpers.js';
+
+const SELECT_SERVICE_USER = `
+  SELECT user_id AS "userId"
+  FROM users
+  WHERE name = $1 AND kind = 'service'
+  LIMIT 1
+`;
+
+interface ServiceUserRow {
+  userId: number;
+}
 
 /**
- * Session-scoped `set_config` — persists for the lifetime of the
- * connection, not just the current transaction. Used by background
- * jobs that run multiple statements outside a transaction.
- */
-const SET_CONFIG_SESSION = 'SELECT set_config($1, $2, false)';
-
-/**
- * Check out a client from the pool, set service-level GUCs
- * (role=settings, all_tenants=true, session_id=serviceName), run the
- * callback, and release the client.
+ * Run background work as a named service principal, inside a `@smplcty/db`
+ * transaction with `app.actor_id` set to that principal's `user_id`.
  *
- * Use this for background Lambdas that need to bypass RLS without a
- * real user session. The GUCs are set session-scoped (not
- * transaction-local) so they persist across all queries on the held
- * client without requiring a wrapping transaction.
+ * Background writers (ingestion, transform workers, app-init) have no human
+ * session, but audit attribution (`created_by`/`updated_by`, stamped from
+ * `app.actor_id`) is NOT NULL — so service writes need an actor too.
+ * Provision a `users` row with `kind = 'service'` for each service and pass
+ * its name here.
+ *
+ * Sets `app.actor_id` (the service's user_id) and `app.session_id` (the
+ * service name, for correlation). No active role / privileges — service
+ * principals act through `current_user_id()` and RLS, not roles.
  *
  * @example
  * ```ts
- * const pool = await getPool();
- * return withServiceContext(pool, 'handle-hierarchy-refresh', async (client) => {
- *   const { rows } = await client.query('SELECT * FROM hierarchy_change_log');
- *   // ... business logic
+ * await withServiceContext(pool, 'transform-worker', async (client) => {
+ *   await client.query('INSERT INTO metrics (...) VALUES (...)'); // audited to the service
  * });
  * ```
  *
- * @throws {InvalidInputError} If `serviceName` is empty.
+ * @throws {InvalidInputError}              If `serviceName` is empty.
+ * @throws {ServicePrincipalNotFoundError}  If no `kind='service'` user has that name.
  */
 export async function withServiceContext<T>(
   pool: Pool,
@@ -39,13 +47,16 @@ export async function withServiceContext<T>(
     throw new InvalidInputError('serviceName must be a non-empty string');
   }
 
-  const client = await pool.connect();
-  try {
-    await client.query(SET_CONFIG_SESSION, [SESSION_VAR_NAMES.sessionId, serviceName]);
-    await client.query(SET_CONFIG_SESSION, [SESSION_VAR_NAMES.roleName, 'settings']);
-    await client.query(SET_CONFIG_SESSION, [SESSION_VAR_NAMES.allTenants, 'true']);
-    return await fn(client);
-  } finally {
-    client.release();
-  }
+  return withTransaction(pool, async (client) => {
+    const { rows } = await client.query<ServiceUserRow>(SELECT_SERVICE_USER, [serviceName]);
+    const row = rows[0];
+    if (!row) {
+      throw new ServicePrincipalNotFoundError(serviceName);
+    }
+
+    await setActorId(client, row.userId);
+    await setSessionId(client, serviceName);
+
+    return fn(client);
+  });
 }

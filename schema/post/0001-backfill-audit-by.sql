@@ -1,0 +1,15 @@
+-- Bootstrap audit attribution for rows seeded during the migration.
+--
+-- The audit mixin (from @smplcty/schema-std) makes created_by/updated_by
+-- NOT NULL, stamped from app.actor_id. But rows seeded *during* a schema-flow
+-- run have no request actor, so they land with NULL _by — and schema-flow
+-- seeds tables in dependency order that doesn't account for the audit FK, so
+-- we can't simply pre-set the actor (a table may be seeded before app-init
+-- exists). Instead we let the seeds land NULL and back-fill here: post-scripts
+-- run after seeds but before the NOT NULL tighten phase.
+--
+-- audit_backfill_by (shipped by @smplcty/schema-std) fills every NULL
+-- created_by/updated_by on every audit-mixin table in this schema, attributing
+-- them to the app-init service principal. app-init's own row resolves the
+-- self-reference (created_by = its own user_id).
+SELECT audit_backfill_by((SELECT user_id FROM users WHERE name = 'app-init' AND kind = 'service'));

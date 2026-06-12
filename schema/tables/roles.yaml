@@ -1,19 +1,43 @@
 table: roles
+mixins: [audit, soft_delete]
 columns:
   - name: role_id
     type: serial
     primary_key: true
   - name: name
-    type: varchar(30)
+    type: varchar(50)
     nullable: false
-unique_constraints:
+  # Human-friendly label for UI (role switcher, admin screens).
+  - name: display_name
+    type: text
+  - name: description
+    type: text
+  # The role auto-selected by withSession when no roleName is requested.
+  # An app should mark exactly one is_privilege=false role as default;
+  # the library just picks the first default it finds.
+  - name: is_default
+    type: boolean
+    nullable: false
+    default: false
+  # is_privilege=false → a selectable mode/persona role. These drive the
+  #   role switcher and become app.active_role for the request.
+  # is_privilege=true  → an always-on capability flag. These are never
+  #   "selected"; every privilege the user holds is exported in
+  #   app.privileges for the request.
+  - name: is_privilege
+    type: boolean
+    nullable: false
+    default: false
+indexes:
+  # Partial so a role name can be reused after the row is soft-deleted.
   - columns: [name]
+    unique: true
+    where: 'deleted_at IS NULL'
     name: roles_name_key
-# The canonical role names @smplcty/auth's withSession() validates against.
-#
-# IDs 1-3 are reserved for these standard roles. Consumers adding their
-# own roles should use IDs >= 100 to avoid colliding with future
-# standard-role additions. The library never references these IDs
+# The canonical role names shipped with @smplcty/auth. IDs 1-3 are
+# reserved for these standard mode roles. Consumers adding their own
+# roles (or privileges) should use IDs >= 100 to avoid colliding with
+# future standard-role additions. The library never references these IDs
 # directly — it always looks up by name — so the IDs are just a stable
 # convention for migration-time conflict detection.
 #
@@ -22,8 +46,20 @@ unique_constraints:
 seeds:
   - role_id: 1
     name: 'user'
+    display_name: 'User'
+    description: 'Standard signed-in user.'
+    is_default: true
+    is_privilege: false
   - role_id: 2
     name: 'settings'
+    display_name: 'Settings'
+    description: 'Account and organisation settings access.'
+    is_default: false
+    is_privilege: false
   - role_id: 3
     name: 'security'
+    display_name: 'Security'
+    description: 'Security administration.'
+    is_default: false
+    is_privilege: false
 seeds_on_conflict: 'DO NOTHING'

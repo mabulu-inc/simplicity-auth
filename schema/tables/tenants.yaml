@@ -1,4 +1,5 @@
 table: tenants
+mixins: [audit, soft_delete]
 columns:
   - name: tenant_id
     type: serial
@@ -6,6 +7,28 @@ columns:
   - name: name
     type: text
     nullable: false
-unique_constraints:
+  # Sub-domain / URL slug, e.g. "acme" in acme.app.com. The app parses the
+  # request Host to this slug; the method router resolves slug → tenant →
+  # its auth_domains, so OIDC sign-in needs no "which org are you?" form.
+  # Nullable: multitenancy (and sub-domains) are optional for simple apps.
+  - name: slug
+    type: text
+  # Whether user-bound OTP (Twilio) sign-in is allowed for this tenant.
+  # Irrelevant when the tenant has no auth_domain (OTP is the only way);
+  # set false to enforce SSO-only on a tenant that has OIDC. Enforced in the
+  # router, not just the UI.
+  - name: allow_otp
+    type: boolean
+    nullable: false
+    default: true
+indexes:
+  # Partial so a tenant name can be reused after the row is soft-deleted.
   - columns: [name]
+    unique: true
+    where: 'deleted_at IS NULL'
     name: tenants_name_key
+  # Sub-domain slug is unique among live tenants.
+  - columns: [slug]
+    unique: true
+    where: 'deleted_at IS NULL'
+    name: tenants_slug_key
