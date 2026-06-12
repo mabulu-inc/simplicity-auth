@@ -34,6 +34,10 @@ Relevant constraints of our stack:
 - **The consumer owns the transient login-state store** — `code_verifier` / `state` / `nonce` in a short-lived signed cookie — and the callback route (per v1's "caller persists verifier/state").
 - **`auth_domains.integration_params` holds only public config** (`issuer`, `client_id`). The **`client_secret` lives in the consumer's secret store** (e.g. Vercel/SSM), not the database. (The legacy stored it in the DB — do not replicate.)
 
+### Out of scope: CRM / data-connection OAuth
+
+This ADR covers **user sign-in (OIDC / AuthN)** only. A separate concern — **delegated authorization to third-party CRMs** (Salesforce, HubSpot, Zoho, … in salez1) — is OAuth 2.0 authorization-code + **refresh** grants whose outcome is a stored, refreshable per-tenant access/refresh token used by background sync, **not** a user session. That is **app-owned** (salez1's `integrations` / `oauth-apps` / `crm-sources` domain — see `docs/v1-design.md` "Boundary: sign-in vs CRM integration"), lives **outside `@smplcty/auth` and `auth_domains`**, and owns its own token storage/encryption/refresh loop plus provider quirks (e.g. Salesforce `instance_url`). It can use the **same `oauth4webapi`** library, but shares none of the sign-in config, sessions, or schema. **Do not fold CRM tokens into `auth_domains`.**
+
 ## Consequences
 
 - **+** Audited, spec-complete protocol handling; server-side; framework-agnostic (fits the Hono API and per-tenant Entra config); composes with `@smplcty/auth` sessions + RLS.
