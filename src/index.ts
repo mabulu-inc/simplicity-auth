@@ -55,7 +55,7 @@ export {
 
 // Authentication methods — pluggable two-phase handlers + auth_domains router.
 export { createMethodRouter } from './methods/router.js';
-export { UnknownMethodError, OtpNotAllowedError, VerificationFailedError } from './methods/errors.js';
+export { OtpNotAllowedError, VerificationFailedError } from './methods/errors.js';
 export type {
   MethodHandler,
   MethodInitiateResult,

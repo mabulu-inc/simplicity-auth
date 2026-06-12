@@ -1,30 +1,6 @@
 import { AuthError } from '../errors.js';
 
 /**
- * Thrown by the method router when an identifier matches no `auth_domains`
- * row and no default handler is configured (or a matched row's
- * `integration_type` has no registered handler).
- */
-export class UnknownMethodError extends AuthError {
-  override readonly name = 'UnknownMethodError';
-  override readonly code = 'UNKNOWN_METHOD' as const;
-  /** The identifier that couldn't be routed. */
-  readonly identifier: string;
-  /** The integration_type that had no handler, if a row matched. */
-  readonly integrationType?: string;
-
-  constructor(identifier: string, integrationType?: string) {
-    super(
-      integrationType
-        ? `No handler registered for integration_type "${integrationType}"`
-        : `No sign-in method matched identifier and no default handler is configured`,
-    );
-    this.identifier = identifier;
-    this.integrationType = integrationType;
-  }
-}
-
-/**
  * Thrown when OTP (user-bound) sign-in is attempted for a tenant whose
  * `allow_otp` is false — an SSO-only tenant. Enforced in the router so a
  * crafted request can't bypass a hidden UI button.

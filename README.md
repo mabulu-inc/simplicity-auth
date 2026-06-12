@@ -175,37 +175,38 @@ await touchSession(db, token); // record activity (last_seen_at); returns whethe
 
 Revoke is a **soft-revoke** — it sets `expires_at = now()`, so the row survives for audit but the session is locked out immediately. Role/privilege changes take effect on the next request automatically (nothing is baked into the token). `revokeTenantSessions` resolves membership from `user_roles.tenant_id` and deliberately spares wildcard (all-tenant) members like global admins.
 
-## Sign-in methods (pluggable)
+## Sign-in methods
 
-A `MethodHandler` models a two-phase flow (`initiate` → send OTP / redirect; `complete` → verify → resolved user). The router is **tenant-centric**: the app resolves the tenant from the request sub-domain (`tenants.slug`), the router lists that tenant's IdPs and dispatches the chosen one by `auth_domains.integration_type`. A tenant has **0..N** IdPs (mergers, mixed workforces, multi-domain orgs), so:
+Sign-in is **tenant-centric**: the app resolves the tenant from the request sub-domain (`tenants.slug`), and the router lists that tenant's IdPs. A tenant has **0..N** OIDC IdPs (mergers, mixed workforces, multi-domain orgs):
 
 - **0 IdPs** → OTP only.
-- **1 IdP** → straight redirect, no sign-in form.
+- **1 IdP** → straight redirect, no chooser.
 - **N IdPs** → a chooser (one button per IdP, labeled `displayName`, valued by `auth_domain_id`).
 
-The user-bound OTP path is gated by the tenant's `allow_otp` flag, **enforced in the router** (not just hidden in the UI) so an SSO-only tenant can't be bypassed.
+The user-bound **OTP** path is gated by the tenant's `allow_otp` flag, **enforced in the router** (not just hidden in the UI) so an SSO-only tenant can't be bypassed. **OIDC** is handled by a dedicated `@smplcty/auth/oidc` handler (built on [`oauth4webapi`](https://github.com/panva/oauth4webapi)) — its `authorize`/`callback` shape is richer than the OTP two-phase, so it's driven directly rather than through the router. See [ADR-0001](docs/adr/0001-oidc-via-oauth4webapi.md).
 
 ```ts
 import { createMethodRouter } from '@smplcty/auth';
-import { oidcHandler } from '@smplcty/auth/oidc'; // optional peer: @smplcty/oidc
+import { oidcHandler } from '@smplcty/auth/oidc'; // optional peer: oauth4webapi
 import { twilioVerifyHandler } from '@smplcty/auth/twilio'; // optional peer: @smplcty/twilio
 import { createTwilioVerifyClient } from '@smplcty/twilio';
 
 const router = createMethodRouter({
   db: pool,
-  handlers: { oidc: oidcHandler() }, // org-bound, by integration_type
   otpHandler: twilioVerifyHandler({ client: createTwilioVerifyClient(cfg) }), // user-bound, tenant-gated
 });
+const oidc = oidcHandler({ clientSecret: (ad) => secrets.get(ad.tenantId) }); // secret from your store, NOT the DB
 
 // Sign-in page — app parsed Host → 'acme':
 const opts = await router.signInOptions({ tenantSlug: 'acme' });
 // opts = { tenantId, authDomains: AuthDomain[], otpAllowed: boolean }
-//   render: opts.authDomains (buttons) + an OTP form iff opts.otpAllowed
+//   render: a button per opts.authDomains + an OTP form iff opts.otpAllowed
 
-// OIDC — user clicked the "Microsoft" button (auth_domain_id 1):
-const { redirectUrl } = await router.initiate(1);
-// ...on callback, the app loads the auth_domain it stored against `state`:
-const user = await router.complete(1, idToken);
+// OIDC — user picked an IdP (an AuthDomain from opts.authDomains):
+const { redirectUrl, loginState } = await oidc.initiate(authDomain);
+// persist loginState (signed cookie keyed by loginState.state), redirect to redirectUrl...
+// ...on the provider callback, hand back the stored loginState + the callback URL:
+const user = await oidc.complete({ db: pool, authDomain, callbackUrl, loginState });
 
 // OTP (only when opts.otpAllowed):
 await router.initiateOtp({ tenantId: opts.tenantId, identifier: phone });
@@ -217,9 +218,9 @@ const session = await createSession(pool, {
 });
 ```
 
-Auth **core** depends on neither `jose` nor Twilio — the handler subpaths do, as **optional peers**. A password-only app installs neither. OIDC is org-bound (reads `auth_domains`); Twilio Verify is user-bound (phone/email) and integrates the [dev-OTP](#developer-otp--for-devs-whose-phones-cant-receive-sms) fallback automatically.
+Auth **core** depends on neither `oauth4webapi` nor Twilio — the handler subpaths do, as **optional peers**. A password-only app installs neither. OIDC is org-bound (`oauth4webapi` does discovery + PKCE + token exchange + `id_token` verification); Twilio Verify is user-bound (phone/email) and integrates the [dev-OTP](#developer-otp--for-devs-whose-phones-cant-receive-sms) fallback automatically.
 
-**What stays app-side:** parsing the request `Host` → slug, the chooser/redirect UI, and the OIDC login-state store (the `state`/`nonce`/PKCE verifier persisted across the redirect). The full OIDC authorization-code flow (authorization-URL building, PKCE, token exchange) is being added to `@smplcty/oidc`; today `oidcHandler.initiate` builds the redirect from the `auth_domains` config and `complete` verifies the returned `id_token`.
+**What stays app-side:** parsing the request `Host` → slug, the chooser/redirect UI, and the OIDC **login-state store** — `oidc.initiate` returns `loginState` (`state`/`nonce`/`codeVerifier`) for you to persist in a short-lived signed cookie keyed by `state`, and hand back to `oidc.complete`. The **`client_secret`** lives in your secret store (passed via the `clientSecret` resolver), **not** in `auth_domains` (which holds only `issuer`/`clientId`).
 
 ## Developer OTP — for devs whose phones can't receive SMS
 

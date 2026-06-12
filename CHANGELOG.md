@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **OIDC now runs on [`oauth4webapi`](https://github.com/panva/oauth4webapi)**
+  (ADR-0001). `@smplcty/auth/oidc`'s `oidcHandler` does the real flow —
+  discovery + PKCE/state/nonce (`initiate` → `{ redirectUrl, loginState }`) and
+  code→token exchange + `id_token` verification (`complete({ db, authDomain,
+callbackUrl, loginState })`). The app persists `loginState` across the
+  redirect; the `client_secret` is supplied via a `clientSecret` resolver from
+  your secret store (not `auth_domains`). `oauth4webapi` replaces `@smplcty/oidc`
+  as the optional peer for the `/oidc` subpath.
+- **The method router is OTP-only.** `createMethodRouter` now exposes
+  `signInOptions` (discovery) + `initiateOtp`/`completeOtp` (gated by
+  `allow_otp`). OIDC is driven directly via `oidcHandler` (its `authorize`/
+  `callback` shape is richer than the generic two-phase handler).
+
+### Removed
+
+- `@smplcty/oidc` dependency (deprecated; superseded by `oauth4webapi`).
+- The router's generic `handlers` map and `initiate(authDomainId)` /
+  `complete(authDomainId, credential)` dispatch, and `UnknownMethodError`
+  (OIDC no longer routes through the generic interface).
+
 ## [1.0.0] - 2026-06-12
 
 The v1 redesign (see `docs/v1-design.md`): one auth model shared by both apps —

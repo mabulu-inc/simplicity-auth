@@ -24,9 +24,6 @@ importers:
       '@release-it/keep-a-changelog':
         specifier: ^7.1.0
         version: 7.1.0(release-it@20.2.0(@types/node@25.5.2))
-      '@smplcty/oidc':
-        specifier: ^0.2.0
-        version: 0.2.0(pg@8.20.0)
       '@smplcty/schema-flow':
         specifier: ^0.11.2
         version: 0.11.2
@@ -48,9 +45,15 @@ importers:
       husky:
         specifier: ^9.1.7
         version: 9.1.7
+      jose:
+        specifier: ^6.2.3
+        version: 6.2.3
       lint-staged:
         specifier: ^17.0.7
         version: 17.0.7
+      oauth4webapi:
+        specifier: ^3.8.6
+        version: 3.8.6
       pg:
         specifier: ^8.20.0
         version: 8.20.0
@@ -521,12 +524,6 @@ packages:
 
   '@smplcty/db@4.2.0':
     resolution: {integrity: sha512-XKIhHH6msxNFexjkJe4FP20b3MYNCwtWk+Ak9GbnNzMI1U4KxfnkkfVpmihnxcCWw2vGpGhrfN4EF5R7bVnafg==}
-    engines: {node: '>=20'}
-    peerDependencies:
-      pg: '>=8.0.0'
-
-  '@smplcty/oidc@0.2.0':
-    resolution: {integrity: sha512-P9ULFCz1FmZBeCIFxiZ+FOBdp+eD4d7FT/00H4u7vV5cGg+UfEJyOlSRBOEDKnGI1bjFQLodyrUnNOr3yzhc2A==}
     engines: {node: '>=20'}
     peerDependencies:
       pg: '>=8.0.0'
@@ -1567,6 +1564,9 @@ packages:
     resolution: {integrity: sha512-K6AJy1GMVyfyMXRVB88700BJqNUkByijGJM8kEHpLdcAt+vSQAVfkWWHYzuRXHSY6xA2sNc5RjTj0p9rE2izVQ==}
     engines: {node: '>=18'}
     hasBin: true
+
+  oauth4webapi@3.8.6:
+    resolution: {integrity: sha512-iwemM91xz8nryHti2yTmg5fhyEMVOkOXwHNqbvcATjyajb5oQxCQzrNOA6uElRHuMhQQTKUyFKV9y/CNyg25BQ==}
 
   obug@2.1.1:
     resolution: {integrity: sha512-uTqF9MuPraAQ+IsnPf366RG4cP9RtUi7MLO1N3KEc+wb0a6yKpeL0lmk2IB1jY5KHPAlTc6T/JRdC/YqxHNwkQ==}
@@ -2632,11 +2632,6 @@ snapshots:
     dependencies:
       pg: 8.20.0
 
-  '@smplcty/oidc@0.2.0(pg@8.20.0)':
-    dependencies:
-      jose: 6.2.3
-      pg: 8.20.0
-
   '@smplcty/schema-flow@0.11.2':
     dependencies:
       chalk: 5.6.2
@@ -3660,6 +3655,8 @@ snapshots:
       citty: 0.2.2
       pathe: 2.0.3
       tinyexec: 1.1.1
+
+  oauth4webapi@3.8.6: {}
 
   obug@2.1.1: {}
 

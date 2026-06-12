@@ -1,0 +1,149 @@
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import * as jose from 'jose';
+import { InvalidInputError, VerificationFailedError } from '../src/index.js';
+import { oidcHandler, type OidcParams, type OidcHandlerOptions } from '../src/methods/oidc/index.js';
+import type { AuthDomain } from '../src/index.js';
+import { startTestDb, type TestDb } from './helpers/test-db.js';
+
+// Unique issuer per case — the handler caches discovery per issuer at module
+// scope, so reusing one across cases would cross-contaminate the mock.
+let seq = 0;
+const nextIssuer = () => `https://idp-${++seq}.example.test`;
+
+/**
+ * A minimal mock OIDC provider over `oauth4webapi`'s injected `fetch`: serves a
+ * discovery doc, a JWKS, and a token endpoint returning a `jose`-signed
+ * id_token. `signIdToken` is called after `initiate` (so the nonce matches).
+ */
+async function makeIdp(issuer: string, clientId: string) {
+  const { publicKey, privateKey } = await jose.generateKeyPair('ES256');
+  const jwk = { ...(await jose.exportJWK(publicKey)), kid: 'k1', alg: 'ES256', use: 'sig' };
+  const endpoints = {
+    authorization_endpoint: `${issuer}/authorize`,
+    token_endpoint: `${issuer}/token`,
+    jwks_uri: `${issuer}/jwks`,
+  };
+  let idToken = '';
+  const signIdToken = async (claims: jose.JWTPayload) => {
+    idToken = await new jose.SignJWT({ aud: clientId, iss: issuer, ...claims })
+      .setProtectedHeader({ alg: 'ES256', kid: 'k1' })
+      .setIssuedAt()
+      .setExpirationTime('5m')
+      .sign(privateKey);
+  };
+  const fetchImpl = (async (input: Parameters<typeof fetch>[0]) => {
+    const url = String(input);
+    if (url.endsWith('/.well-known/openid-configuration')) {
+      return Response.json({
+        issuer,
+        ...endpoints,
+        response_types_supported: ['code'],
+        subject_types_supported: ['public'],
+        id_token_signing_alg_values_supported: ['ES256'],
+      });
+    }
+    if (url === endpoints.jwks_uri) return Response.json({ keys: [jwk] });
+    if (url === endpoints.token_endpoint) {
+      return Response.json({ access_token: 'at', token_type: 'Bearer', id_token: idToken });
+    }
+    return new Response('not found', { status: 404 });
+  }) as typeof fetch;
+  return { fetchImpl, signIdToken };
+}
+
+function authDomainFor(issuer: string, clientId = 'test-client'): AuthDomain<OidcParams> {
+  return {
+    authDomainId: 1,
+    tenantId: 1,
+    displayName: 'Test IdP',
+    integrationType: 'oidc',
+    integrationParams: { issuer, clientId, redirectUri: 'https://app.test/callback' },
+  };
+}
+
+describe('oidcHandler.initiate', () => {
+  it('discovers the provider and builds an authorization URL + login state', async () => {
+    const issuer = nextIssuer();
+    const { fetchImpl } = await makeIdp(issuer, 'test-client');
+    const handler = oidcHandler({ fetch: fetchImpl });
+
+    const { redirectUrl, loginState } = await handler.initiate(authDomainFor(issuer));
+    const url = new URL(redirectUrl);
+
+    expect(url.origin + url.pathname).toBe(`${issuer}/authorize`);
+    expect(url.searchParams.get('client_id')).toBe('test-client');
+    expect(url.searchParams.get('response_type')).toBe('code');
+    expect(url.searchParams.get('redirect_uri')).toBe('https://app.test/callback');
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+    expect(url.searchParams.get('code_challenge')).toBeTruthy();
+    expect(url.searchParams.get('state')).toBe(loginState.state);
+    expect(url.searchParams.get('nonce')).toBe(loginState.nonce);
+    expect(loginState.codeVerifier).toBeTruthy();
+  });
+
+  it('rejects a non-oidc auth_domain and incomplete params', async () => {
+    const handler = oidcHandler();
+    await expect(
+      handler.initiate({ ...authDomainFor('https://x.test'), integrationType: 'saml' }),
+    ).rejects.toBeInstanceOf(InvalidInputError);
+    await expect(
+      handler.initiate({
+        authDomainId: 1,
+        tenantId: 1,
+        displayName: 'x',
+        integrationType: 'oidc',
+        integrationParams: { clientId: 'c', redirectUri: 'r' } as OidcParams,
+      }),
+    ).rejects.toBeInstanceOf(InvalidInputError);
+  });
+});
+
+describe('oidcHandler.complete', () => {
+  let db: TestDb;
+  beforeAll(async () => {
+    db = await startTestDb();
+  });
+  afterAll(async () => {
+    await db.shutdown();
+  });
+
+  async function runFlow(opts: { email?: string; provisionUser?: OidcHandlerOptions['provisionUser'] }) {
+    const issuer = nextIssuer();
+    const idp = await makeIdp(issuer, 'test-client');
+    const handler = oidcHandler({
+      fetch: idp.fetchImpl,
+      clientSecret: () => 'test-secret',
+      provisionUser: opts.provisionUser,
+    });
+    const authDomain = authDomainFor(issuer);
+
+    const { loginState } = await handler.initiate(authDomain);
+    await idp.signIdToken({
+      sub: 'entra-sub-1',
+      nonce: loginState.nonce,
+      ...(opts.email ? { email: opts.email } : {}),
+    });
+    const callbackUrl = `https://app.test/callback?code=test-code&state=${loginState.state}`;
+    return handler.complete({ db: db.pool, authDomain, callbackUrl, loginState });
+  }
+
+  it('verifies the id_token and resolves the existing user', async () => {
+    // alice@acme.com is seeded as ucm 1 / user 2.
+    const user = await runFlow({ email: 'alice@acme.com' });
+    expect(user).toEqual({ userId: 2, userCommunicationMethodId: 1 });
+  });
+
+  it('throws VerificationFailedError when the id_token has no email/preferred_username', async () => {
+    await expect(runFlow({})).rejects.toBeInstanceOf(VerificationFailedError);
+  });
+
+  it('throws VerificationFailedError for a verified identity with no user and no provisioning', async () => {
+    await expect(runFlow({ email: 'ghost@nowhere.test' })).rejects.toBeInstanceOf(VerificationFailedError);
+  });
+
+  it('provisions a new user via the provisionUser hook', async () => {
+    const provisioned = { userId: 4, userCommunicationMethodId: 3 };
+    const user = await runFlow({ email: 'ghost@nowhere.test', provisionUser: async () => provisioned });
+    expect(user).toEqual(provisioned);
+  });
+});
