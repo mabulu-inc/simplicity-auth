@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-12
+
 The v1 redesign (see `docs/v1-design.md`): one auth model shared by both apps —
 stateful sessions, a pluggable sign-in method, an app-owned authorization scope,
 and an identity contract the database reads per request. This is a major,
@@ -98,6 +100,7 @@ Baseline release. Notes for this and earlier versions are on the
 [GitHub releases page](https://github.com/mabulu-inc/simplicity-auth/releases);
 the Keep a Changelog history starts from the next release.
 
-[Unreleased]: https://github.com/mabulu-inc/simplicity-auth/compare/v0.6.4...HEAD
+[Unreleased]: https://github.com/mabulu-inc/simplicity-auth/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/mabulu-inc/simplicity-auth/compare/v0.6.4...v1.0.0
 [0.6.4]: https://github.com/mabulu-inc/simplicity-auth/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/mabulu-inc/simplicity-auth/releases/tag/v0.6.3
