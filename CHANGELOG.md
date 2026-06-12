@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-06-12
+
 ### Changed
 
 - **OIDC now runs on [`oauth4webapi`](https://github.com/panva/oauth4webapi)**
@@ -122,7 +124,8 @@ Baseline release. Notes for this and earlier versions are on the
 [GitHub releases page](https://github.com/mabulu-inc/simplicity-auth/releases);
 the Keep a Changelog history starts from the next release.
 
-[Unreleased]: https://github.com/mabulu-inc/simplicity-auth/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/mabulu-inc/simplicity-auth/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/mabulu-inc/simplicity-auth/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/mabulu-inc/simplicity-auth/compare/v0.6.4...v1.0.0
 [0.6.4]: https://github.com/mabulu-inc/simplicity-auth/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/mabulu-inc/simplicity-auth/releases/tag/v0.6.3
