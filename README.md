@@ -5,6 +5,8 @@ Robust, type-safe **stateful-session** authentication primitives for PostgreSQL 
 [![npm](https://img.shields.io/npm/v/@smplcty/auth.svg)](https://www.npmjs.com/package/@smplcty/auth)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+📖 **[Documentation](https://mabulu-inc.github.io/simplicity-auth)**
+
 ## Why
 
 The library owns **identity, sessions, roles/privileges, tenants, sign-in federation, and per-request context**. Each app owns only its **intra-tenant authorization scope** (its RLS model). See [`docs/v1-design.md`](docs/v1-design.md) for the full design.

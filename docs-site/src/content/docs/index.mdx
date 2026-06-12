@@ -1,0 +1,36 @@
+---
+title: '@smplcty/auth'
+description: Stateful-session authentication primitives for PostgreSQL apps using Row-Level Security — identity, sessions, roles/privileges, tenants, pluggable sign-in, and a per-request identity contract the database reads.
+template: splash
+hero:
+  tagline: The library owns identity, sessions, roles/privileges, tenants, sign-in federation, and per-request context. Each app owns only its intra-tenant authorization scope (its RLS model). Stateful sessions, not JWT — because tracking activity, tenant-wide sign-off, and immediate role changes all need per-request server authority.
+  actions:
+    - text: Get started
+      link: /simplicity-auth/getting-started/introduction/
+      icon: right-arrow
+    - text: Sign-in methods
+      link: /simplicity-auth/methods/overview/
+      icon: open-book
+      variant: minimal
+    - text: GitHub
+      link: https://github.com/mabulu-inc/simplicity-auth
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid>
+  <Card title="Stateful sessions" icon="approve-check">
+    Opaque tokens, hashed at rest. Revocation is a row update; role/privilege changes apply on the next request. `withSession` resolves and validates in one indexed query folded into the RLS transaction.
+  </Card>
+  <Card title="Identity GUC contract" icon="setting">
+    Each request sets exactly `app.actor_id` / `app.session_id` / `app.active_role` / `app.privileges`, transaction-scoped so they can't leak. `current_user_id()` reads the actor; your RLS keys on it.
+  </Card>
+  <Card title="App-owned scope" icon="puzzle">
+    The library sets no tenant/scope GUC. Pass a scope hook (or the `flat-tenant` preset) so your RLS model — producer/region/plant, rep hierarchy, flat tenants — stays yours.
+  </Card>
+  <Card title="Pluggable sign-in" icon="rocket">
+    Tenant-centric discovery; OTP (Twilio + dev-OTP) via the router; OIDC via a dedicated `oauth4webapi` handler. Core pulls in neither `oauth4webapi` nor Twilio — they're opt-in subpaths.
+  </Card>
+</CardGrid>
