@@ -102,24 +102,24 @@
     "@release-it/keep-a-changelog": "^7.1.0",
     "@smplcty/schema-flow": "^0.11.2",
     "@smplcty/twilio": "^0.1.1",
-    "@testcontainers/postgresql": "^12.0.1",
-    "@types/node": "^25.5.2",
+    "@testcontainers/postgresql": "^12.0.2",
+    "@types/node": "^25.9.3",
     "@types/pg": "^8.20.0",
-    "eslint": "^10.2.0",
+    "eslint": "^10.5.0",
     "husky": "^9.1.7",
     "jose": "^6.2.3",
     "lint-staged": "^17.0.7",
     "oauth4webapi": "^3.8.6",
-    "pg": "^8.20.0",
+    "pg": "^8.21.0",
     "prettier": "^3.8.4",
     "release-it": "^20.2.0",
-    "typescript": "^6.0.2",
-    "typescript-eslint": "^8.58.1",
-    "vitest": "^4.1.4"
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.0",
+    "vitest": "^4.1.8"
   },
   "dependencies": {
     "@smplcty/db": "^4.2.0",
     "@smplcty/schema-std": "^0.0.1",
-    "otplib": "^13.4.0"
+    "otplib": "^13.4.1"
   }
 }
