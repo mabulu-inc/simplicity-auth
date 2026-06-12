@@ -103,6 +103,7 @@
     "@smplcty/oidc": "^0.2.0",
     "@smplcty/schema-flow": "^0.11.2",
     "@smplcty/twilio": "^0.1.1",
+    "@testcontainers/postgresql": "^12.0.1",
     "@types/node": "^25.5.2",
     "@types/pg": "^8.20.0",
     "eslint": "^10.2.0",

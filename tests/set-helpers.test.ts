@@ -133,7 +133,6 @@ describe('identity GUC helpers', () => {
       const pool = new (await import('pg')).default.Pool({
         connectionString: db.connectionString,
         max: 1,
-        options: `-c search_path=${db.schema}`,
       });
       try {
         await withTransaction(pool, async (client) => {

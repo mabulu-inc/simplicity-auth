@@ -1,55 +1,78 @@
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import pg from 'pg';
+import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 
 /**
- * Vitest globalSetup hook.
+ * Vitest globalSetup — runs once per test run.
  *
- * Two modes:
+ * Provisions Postgres with **Testcontainers** (ephemeral, Ryuk-reaped — no
+ * docker-compose, no shared instance to leak between runs), builds the schema
+ * **once** into a `auth_template` database, seeds the test fixtures into it,
+ * and exposes the admin connection + template name. Each test file then clones
+ * the template via `CREATE DATABASE … TEMPLATE` (see tests/helpers/test-db.ts),
+ * so the expensive schema-flow migration is paid once, not per file.
  *
- * 1. **Local dev (default).** No `DATABASE_URL` is set. We start the
- *    docker-compose Postgres defined in `docker-compose.yml`, leave
- *    it running between test runs for fast cold starts, and export
- *    `DATABASE_URL` pointing at it.
- *
- * 2. **CI / external Postgres.** `DATABASE_URL` is already set by the
- *    caller (e.g. a GitHub Actions service container). We skip the
- *    docker-compose dance entirely and just use what was provided.
- *
- * Each test file then carves out an isolated `test_<hex>` Postgres schema
- * via `useTestProject` and drops it on `shutdown()`. This hook does a
- * one-time **sweep of stale `test_*` schemas** first, so orphans left by a
- * previous crashed/interrupted run (or a setup that threw before its
- * `afterAll` could clean up) don't accumulate — no manual `DROP SCHEMA`.
+ * Requires a reachable Docker daemon (local Docker Desktop / colima; GitHub
+ * `ubuntu-latest` and AWS CodeBuild/EC2 all provide one).
  */
-export default async function setup(): Promise<void> {
-  if (!process.env.DATABASE_URL) {
-    execSync('docker compose up -d --wait', {
-      stdio: 'inherit',
-      cwd: import.meta.dirname,
-    });
-    process.env.DATABASE_URL = 'postgresql://postgres:postgres@localhost:54320/postgres';
-  }
 
-  await sweepStaleTestSchemas(process.env.DATABASE_URL);
+const REPO_ROOT = import.meta.dirname;
+const FIXTURE = path.join(REPO_ROOT, 'tests/fixtures/seed-test-data.sql');
+const TEMPLATE_DB = 'auth_template';
+const APP_INIT_USER_ID = '1';
+
+let container: StartedPostgreSqlContainer | undefined;
+
+function withDatabase(uri: string, dbName: string): string {
+  const url = new URL(uri);
+  url.pathname = `/${dbName}`;
+  return url.toString();
 }
 
-/**
- * Drop any leftover `test_<hex>` schemas from prior runs. Assumes no other
- * test run is using this database concurrently (true for the local docker
- * instance and CI's per-job container). Names are matched against the
- * harness's own `test_<hex>` shape before use, so the identifier is safe.
- */
-async function sweepStaleTestSchemas(connectionString: string): Promise<void> {
-  const pool = new pg.Pool({ connectionString, max: 1 });
+export default async function setup(): Promise<() => Promise<void>> {
+  container = await new PostgreSqlContainer('postgres:16-alpine')
+    .withDatabase('postgres')
+    .withUsername('postgres')
+    .withPassword('postgres')
+    .start();
+
+  const adminUri = container.getConnectionUri();
+  const templateUri = withDatabase(adminUri, TEMPLATE_DB);
+
+  // 1. Create the template database (from the maintenance `postgres` db).
+  const admin = new pg.Pool({ connectionString: adminUri, max: 1 });
   try {
-    const { rows } = await pool.query<{ schema_name: string }>(
-      `SELECT schema_name FROM information_schema.schemata WHERE schema_name LIKE 'test\\_%'`,
-    );
-    for (const { schema_name } of rows) {
-      if (!/^test_[0-9a-f]+$/i.test(schema_name)) continue;
-      await pool.query(`DROP SCHEMA "${schema_name}" CASCADE`);
-    }
+    await admin.query(`CREATE DATABASE ${TEMPLATE_DB}`);
   } finally {
-    await pool.end();
+    await admin.end();
   }
+
+  // 2. Migrate the shipped schema into the template via the schema-flow CLI —
+  //    the documented path. imports (@smplcty/schema-std + params) come from
+  //    schema-flow.config.yaml; --db points at the template; the post/ script
+  //    back-fills audit attribution before the NOT NULL tighten.
+  execFileSync('pnpm', ['exec', 'schema-flow', 'run', '--db', templateUri, '--dir', 'schema', '--quiet'], {
+    cwd: REPO_ROOT,
+    stdio: 'inherit',
+    env: { ...process.env, DATABASE_URL: templateUri },
+  });
+
+  // 3. Seed the test fixtures into the template (acting as app-init so the
+  //    audit triggers stamp created_by/updated_by). Clones inherit all of this.
+  const fixture = await readFile(FIXTURE, 'utf8');
+  const seed = new pg.Pool({ connectionString: templateUri, max: 1 });
+  try {
+    await seed.query(`SELECT set_config('app.actor_id', '${APP_INIT_USER_ID}', false);\n${fixture}`);
+  } finally {
+    await seed.end();
+  }
+
+  process.env.AUTH_TEST_ADMIN_URL = adminUri;
+  process.env.AUTH_TEST_TEMPLATE_DB = TEMPLATE_DB;
+
+  return async () => {
+    await container?.stop();
+  };
 }

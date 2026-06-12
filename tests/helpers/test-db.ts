@@ -1,171 +1,86 @@
-import { cp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { randomBytes } from 'node:crypto';
 import pg from 'pg';
-import { useTestProject, writeSchema } from '@smplcty/schema-flow/testing';
-import type { TestProject } from '@smplcty/schema-flow/testing';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(HERE, '../..');
-const SHIPPED_SCHEMA_DIR = path.join(REPO_ROOT, 'schema');
-const TEST_FIXTURES_DIR = path.resolve(HERE, '../fixtures');
-const TEST_SEED_PATH = path.join(TEST_FIXTURES_DIR, 'seed-test-data.sql');
+// Serializes `CREATE DATABASE … TEMPLATE` across concurrently-starting test
+// files: Postgres rejects the clone if another session is touching the
+// template, so overlapping clones must not race. Held only for the (fast)
+// copy of the small template, then released — tests still run in parallel.
+const TEMPLATE_CLONE_LOCK = 982451653;
 
-// The app-init service principal seeded by schema/tables/users.yaml. The
-// audit triggers stamp created_by/updated_by from app.actor_id, so the
-// post-migration test seed (which writes audited tables) must act as it too.
-const APP_INIT_USER_ID = '1';
-
-const require = createRequire(import.meta.url);
-// schema-std's shipped schema/ — the real artifact consumers import.
-const SCHEMA_STD_SCHEMA_DIR = path.join(path.dirname(require.resolve('@smplcty/schema-std/package.json')), 'schema');
-
-/**
- * Discover all files inside SHIPPED_SCHEMA_DIR (recursively, capped at
- * the directories schema-flow recognises) and return them as an
- * { 'tables/foo.yaml': '<contents>' } map suitable for `writeSchema`.
- */
-async function loadShippedSchemaFiles(): Promise<Record<string, string>> {
-  const out: Record<string, string> = {};
-  for (const subdir of ['tables', 'functions', 'post']) {
-    const dir = path.join(SHIPPED_SCHEMA_DIR, subdir);
-    let entries: string[];
-    try {
-      entries = await readdir(dir);
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      const abs = path.join(dir, entry);
-      const content = await readFile(abs, 'utf8');
-      out[`${subdir}/${entry}`] = content;
-    }
-  }
-  return out;
-}
-
-/**
- * Install @smplcty/schema-std's real shipped `schema/` into the test
- * project's node_modules so schema-flow's `imports:` resolution (which walks
- * up from baseDir) finds it. Mirrors schema-std's own e2e `installSelf`.
- */
-async function installSchemaStd(projectDir: string): Promise<void> {
-  const pkgRoot = path.join(projectDir, 'node_modules', '@smplcty', 'schema-std');
-  await mkdir(pkgRoot, { recursive: true });
-  await writeFile(
-    path.join(pkgRoot, 'package.json'),
-    JSON.stringify({ name: '@smplcty/schema-std', version: '0.0.0' }),
-  );
-  await cp(SCHEMA_STD_SCHEMA_DIR, path.join(pkgRoot, 'schema'), { recursive: true });
+function withDatabase(uri: string, dbName: string): string {
+  const url = new URL(uri);
+  url.pathname = `/${dbName}`;
+  return url.toString();
 }
 
 export interface TestDb {
-  /** A pg.Pool connected to this test file's isolated database. */
+  /** A pg.Pool connected to this test file's cloned database. */
   pool: pg.Pool;
-  /** Connection string for the same isolated database. */
+  /** Connection string for the same cloned database. */
   connectionString: string;
-  /** The isolated Postgres schema name. Put it on a connection's
-   *  search_path (`-c search_path=<schema>`) when opening your own pool. */
-  schema: string;
   /** TRUNCATE the sessions table. Used by tests that need a clean slate. */
   resetSessions: () => Promise<void>;
-  /** Drop the isolated database and clean up the schema-flow temp dir. */
+  /** Drop the cloned database and close pools. */
   shutdown: () => Promise<void>;
 }
 
 /**
- * Bring up a fresh isolated schema for a test file.
+ * Bring up an isolated database for a test file by **cloning the migrated +
+ * seeded template** that `vitest.global-setup.ts` built once via Testcontainers
+ * (`CREATE DATABASE <unique> TEMPLATE auth_template`). The clone already has the
+ * full schema + fixtures, so there's no per-file migration — the expensive
+ * schema-flow run is paid once for the whole suite.
  *
- * Each call:
- *   1. Carves out a new isolated Postgres schema under DATABASE_URL.
- *   2. Copies the SHIPPED YAML from `simplicity-auth/schema/` into the
- *      project temp dir, and installs `@smplcty/schema-std` into its
- *      node_modules (so the audit/soft_delete mixins resolve via `imports`).
- *   3. Wires `imports` (+ params) onto the config, then runs `ctx.migrate()`.
- *      Migration seeds land with NULL audit _by columns; the shipped
- *      `post/` script back-fills them to app-init before the NOT NULL tighten.
- *   4. Loads the test-only seed data (Alice, Bob, etc.), acting as app-init.
- *   5. Returns a `pg.Pool` and a `shutdown` function.
+ * `shutdown()` drops the clone. The container itself is reaped by
+ * Testcontainers (Ryuk) even on a hard crash, so nothing leaks between runs.
  */
 export async function startTestDb(): Promise<TestDb> {
-  const adminUrl = process.env.DATABASE_URL;
-  if (!adminUrl) {
+  const adminUrl = process.env.AUTH_TEST_ADMIN_URL;
+  const template = process.env.AUTH_TEST_TEMPLATE_DB;
+  if (!adminUrl || !template) {
     throw new Error(
-      'DATABASE_URL is not set. The vitest globalSetup is responsible for ' +
-        'starting docker compose and exporting DATABASE_URL — make sure ' +
-        'vitest.config.ts has globalSetup wired up.',
+      'AUTH_TEST_ADMIN_URL / AUTH_TEST_TEMPLATE_DB are not set. The vitest ' +
+        'globalSetup provisions Postgres via Testcontainers and builds the ' +
+        'template — make sure vitest.config.ts has globalSetup wired up.',
     );
   }
 
-  const ctx: TestProject = await useTestProject(adminUrl);
+  const dbName = `test_${randomBytes(8).toString('hex')}`;
+  const admin = new pg.Pool({ connectionString: adminUrl, max: 1 });
 
-  // Everything after useTestProject can throw (a bad migration, a seed
-  // error). If it does, drop the schema we just created before rethrowing —
-  // otherwise a failing beforeAll leaks an orphaned test_* schema that the
-  // file's afterAll can't reach (its `db` was never assigned).
+  // Lock + clone + unlock on one connection so the advisory lock is held by
+  // the same session that runs CREATE DATABASE.
+  const client = await admin.connect();
   try {
-    return await buildTestDb(ctx);
-  } catch (err) {
-    await ctx.cleanup().catch(() => {
-      // Best-effort: surface the original error, not a cleanup failure.
-    });
-    throw err;
-  }
-}
-
-async function buildTestDb(ctx: TestProject): Promise<TestDb> {
-  // Copy the shipped YAML schema into the schema-flow project's working
-  // directory so the test database is migrated using the same files we ship.
-  const shippedFiles = await loadShippedSchemaFiles();
-  writeSchema(ctx.dir, shippedFiles);
-
-  // Make @smplcty/schema-std resolvable from the project, and wire the import
-  // (+ params) exactly as the shipped schema-flow.config.yaml documents for
-  // consumers. The migration-time audit attribution is handled by the shipped
-  // post/ back-fill script, not a per-tx actor.
-  await installSchemaStd(ctx.dir);
-  ctx.config.imports = [
-    { package: '@smplcty/schema-std', params: { user_table: 'users', user_pk: 'user_id', actor_guc: 'app.actor_id' } },
-  ];
-
-  // Apply tables, imported mixins/functions, seeds, the post/ audit back-fill,
-  // and the NOT NULL tighten.
-  await ctx.migrate();
-
-  // schema-flow 0.11 isolates each test in a fresh Postgres *schema*
-  // (not a fresh database), so every connection must put that schema on
-  // its search_path or it'll resolve names against `public`.
-  const searchPathOption = `-c search_path=${ctx.schema}`;
-
-  // Apply test-only seed data (Alice/Bob/etc.) on top of the canonical
-  // schema. It writes audited tables (users/tenants/roles/...), so it acts
-  // as app-init — otherwise audit_stamp would leave created_by NULL and the
-  // NOT NULL constraint would reject the insert.
-  const testSeed = await readFile(TEST_SEED_PATH, 'utf8');
-  const seedSql = `SELECT set_config('app.actor_id', '${APP_INIT_USER_ID}', false);\n${testSeed}`;
-  const seedPool = new pg.Pool({ connectionString: ctx.connectionString, max: 1, options: searchPathOption });
-  try {
-    await seedPool.query(seedSql);
+    await client.query('SELECT pg_advisory_lock($1)', [TEMPLATE_CLONE_LOCK]);
+    try {
+      await client.query(`CREATE DATABASE "${dbName}" TEMPLATE "${template}"`);
+    } finally {
+      await client.query('SELECT pg_advisory_unlock($1)', [TEMPLATE_CLONE_LOCK]);
+    }
   } finally {
-    await seedPool.end();
+    client.release();
   }
 
-  // The pool every test query goes through. Separate from the seed
-  // pool above so each test file gets a fresh connection pool that's
-  // sized for parallelism within the file.
-  const pool = new pg.Pool({ connectionString: ctx.connectionString, max: 4, options: searchPathOption });
+  const connectionString = withDatabase(adminUrl, dbName);
+  const pool = new pg.Pool({ connectionString, max: 4 });
 
   return {
     pool,
-    connectionString: ctx.connectionString,
-    schema: ctx.schema,
+    connectionString,
     async resetSessions() {
       await pool.query('TRUNCATE sessions');
     },
     async shutdown() {
       await pool.end();
-      await ctx.cleanup();
+      // Drop the clone. Terminate any straggler connections first so DROP
+      // DATABASE doesn't fail on "database is being accessed by other users".
+      await admin.query(
+        `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
+        [dbName],
+      );
+      await admin.query(`DROP DATABASE IF EXISTS "${dbName}"`);
+      await admin.end();
     },
   };
 }

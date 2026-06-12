@@ -23,20 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports:
-          - 54320:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 2s
-          --health-timeout 5s
-          --health-retries 10
+    # Postgres is provisioned per run by Testcontainers (the vitest
+    # globalSetup), using the runner's Docker daemon — no service container.
 
     steps:
       - name: Check out code
@@ -85,11 +73,7 @@ jobs:
       - name: Run gitleaks (full git history)
         run: gitleaks git . --no-banner --redact
 
-      - name: Run tests against Postgres service
-        env:
-          # When DATABASE_URL is set, the vitest globalSetup skips
-          # docker-compose and uses this connection directly.
-          DATABASE_URL: postgresql://postgres:postgres@localhost:54320/postgres
+      - name: Run tests (Postgres via Testcontainers)
         run: pnpm test
 
       - name: Build distribution
