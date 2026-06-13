@@ -1,0 +1,43 @@
+---
+import Default from '@astrojs/starlight/components/SiteTitle.astro';
+
+// __LIB_VERSION__ is injected at build time from the root package.json
+// (see astro.config.mjs). Derived, never stored here.
+const version = __LIB_VERSION__;
+---
+
+<span class="site-title-with-version">
+  <Default {...Astro.props}><slot /></Default>
+  <a
+    class="version-badge"
+    href={`https://github.com/mabulu-inc/simplicity-auth/releases/tag/v${version}`}
+    title={`Released version v${version}`}
+  >
+    v{version}
+  </a>
+</span>
+
+<style>
+  .site-title-with-version {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+  .version-badge {
+    flex-shrink: 0;
+    font-size: var(--sl-text-xs);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.4;
+    padding: 0.05rem 0.4rem;
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 9999px;
+    color: var(--sl-color-gray-2);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .version-badge:hover {
+    color: var(--sl-color-white);
+    border-color: var(--sl-color-gray-3);
+  }
+</style>
