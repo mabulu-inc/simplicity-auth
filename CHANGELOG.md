@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.2] - 2026-06-13
+
 ### Added
 
 - The documentation site now shows the released version as a badge in its
@@ -136,7 +138,8 @@ Baseline release. Notes for this and earlier versions are on the
 [GitHub releases page](https://github.com/mabulu-inc/simplicity-auth/releases);
 the Keep a Changelog history starts from the next release.
 
-[Unreleased]: https://github.com/mabulu-inc/simplicity-auth/compare/v2.0.1...HEAD
+[Unreleased]: https://github.com/mabulu-inc/simplicity-auth/compare/v2.0.2...HEAD
+[2.0.2]: https://github.com/mabulu-inc/simplicity-auth/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/mabulu-inc/simplicity-auth/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/mabulu-inc/simplicity-auth/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/mabulu-inc/simplicity-auth/compare/v0.6.4...v1.0.0
