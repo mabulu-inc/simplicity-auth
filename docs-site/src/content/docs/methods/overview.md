@@ -54,3 +54,11 @@ Either path yields a `{ userId, userCommunicationMethodId }`; hand it to
 
 Auth **core** depends on neither `oauth4webapi` nor Twilio — the handler subpaths
 do, as optional peers. A password-only app installs neither.
+
+:::tip[Don't want to wire the routes yourself?]
+The [HTTP transport tier](/simplicity-auth/http/transport/)
+(`@smplcty/auth/http`) does all of the above — discovery, the OTP two-phase, the
+OIDC `start`/`callback`, the session cookie, and the signed login-state cookie —
+as framework-agnostic handlers you mount in one line. Drop it in and you only
+build the sign-in screen.
+:::

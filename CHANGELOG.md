@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`@smplcty/auth/http` — a framework-agnostic transport tier.** New opt-in
+  subpath that wires the existing primitives (method router, OIDC handler,
+  session lifecycle) into Web-standard `(Request) => Promise<Response>`
+  handlers, so an app gets the full sign-in surface without hand-writing it:
+  - `createAuthHandlers(config)` exposes `sign-in/options`, `otp/initiate`,
+    `otp/complete`, `oidc/start`, `oidc/callback`, `sign-out`, and `session`,
+    plus a `handle(request)` dispatcher (returns `null` for non-auth routes).
+  - Cookie helpers and a short-lived **HMAC-signed** OIDC login-state cookie
+    (state/nonce/codeVerifier) built on Web Crypto — edge-safe, no `Buffer`.
+  - `getSessionToken` and `withRequestSession` for per-request auth middleware.
+  - Same-origin `returnTo` enforcement (open-redirect guard) and server-side
+    enforcement of `allow_otp`.
+    Mounts directly in Hono (`app.all('/auth/*', (c) => handlers.handle(c.req.raw))`)
+    or as Next.js App Router route handlers. Twilio and `oauth4webapi` stay
+    optional peers — the app passes the handlers it constructed via config.
+
 ## [2.0.2] - 2026-06-13
 
 ### Added

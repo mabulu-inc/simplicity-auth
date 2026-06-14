@@ -222,7 +222,46 @@ const session = await createSession(pool, {
 
 Auth **core** depends on neither `oauth4webapi` nor Twilio — the handler subpaths do, as **optional peers**. A password-only app installs neither. OIDC is org-bound (`oauth4webapi` does discovery + PKCE + token exchange + `id_token` verification); Twilio Verify is user-bound (phone/email) and integrates the [dev-OTP](#developer-otp--for-devs-whose-phones-cant-receive-sms) fallback automatically.
 
-**What stays app-side:** parsing the request `Host` → slug, the chooser/redirect UI, and the OIDC **login-state store** — `oidc.initiate` returns `loginState` (`state`/`nonce`/`codeVerifier`) for you to persist in a short-lived signed cookie keyed by `state`, and hand back to `oidc.complete`. The **`client_secret`** lives in your secret store (passed via the `clientSecret` resolver), **not** in `auth_domains` (which holds only `issuer`/`clientId`).
+**What stays app-side:** parsing the request `Host` → slug, the chooser/redirect UI, and the OIDC **login-state store** — `oidc.initiate` returns `loginState` (`state`/`nonce`/`codeVerifier`) for you to persist in a short-lived signed cookie keyed by `state`, and hand back to `oidc.complete`. The **`client_secret`** lives in your secret store (passed via the `clientSecret` resolver), **not** in `auth_domains` (which holds only `issuer`/`clientId`). The [`@smplcty/auth/http`](#http-transport--smpltyauthhttp) tier handles the routes, cookies, and login-state store for you — drop it in and you write only the slug parser + the sign-in screen.
+
+## HTTP transport — `@smplcty/auth/http`
+
+The pieces above are primitives. **`@smplcty/auth/http`** wires them into
+ready-made, framework-agnostic HTTP handlers so you don't hand-write the
+`/auth/*` routes, the session cookie, the OIDC login-state cookie, or the
+per-request auth middleware. Every handler is a Web-standard
+`(Request) => Promise<Response>`, so it mounts directly in Hono and Next.js App
+Router — no adapter, and no new heavy dependency (it's built on Web
+`Request`/`Response` + Web Crypto). Twilio and `oauth4webapi` stay optional
+peers: you pass the handlers you constructed.
+
+```ts
+import { createAuthHandlers } from '@smplcty/auth/http';
+import { oidcHandler } from '@smplcty/auth/oidc';
+import { twilioVerifyHandler } from '@smplcty/auth/twilio';
+
+const handlers = createAuthHandlers({
+  pool,
+  cookie: { name: 'app_session', domain: '.app.example.com' },
+  loginStateSecret: process.env.LOGIN_STATE_SECRET,
+  tenantSlugFromRequest: (req) => new URL(req.url).hostname.split('.')[0],
+  otpHandler: twilioVerifyHandler({ client }), // omit for SSO-only
+  oidc: oidcHandler({ clientSecret: (ad) => secrets.get(ad.tenantId) }), // omit if no OIDC
+});
+
+// Hono — one line:
+app.all('/auth/*', (c) => handlers.handle(c.req.raw).then((r) => r ?? c.notFound()));
+// Next.js App Router — the handlers ARE route handlers:
+//   export const GET = (req) => handlers.handle(req).then((r) => r ?? new Response(null, { status: 404 }));
+```
+
+It exposes `GET …/sign-in/options`, `POST …/otp/initiate`, `POST …/otp/complete`,
+`GET …/oidc/start`, `GET …/oidc/callback`, `POST …/sign-out`, and
+`GET …/session`, plus `getSessionToken` / `withRequestSession` for authenticating
+every other request. `returnTo` is open-redirect-guarded, `allow_otp` is enforced
+server-side, and the OIDC login-state cookie is HMAC-signed and freshness-checked.
+
+Full reference: **[HTTP transport](https://mabulu-inc.github.io/simplicity-auth/http/transport/)**.
 
 ## Developer OTP — for devs whose phones can't receive SMS
 

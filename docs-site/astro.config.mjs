@@ -59,6 +59,10 @@ export default defineConfig({
           ],
         },
         {
+          label: 'HTTP transport',
+          items: [{ label: 'Drop-in handlers', slug: 'http/transport' }],
+        },
+        {
           label: 'Schema',
           items: [{ label: 'Required database schema', slug: 'schema/overview' }],
         },

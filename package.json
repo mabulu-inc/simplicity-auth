@@ -26,6 +26,11 @@
       "types": "./dist/scope/flat-tenant.d.ts",
       "import": "./dist/scope/flat-tenant.js",
       "default": "./dist/scope/flat-tenant.js"
+    },
+    "./http": {
+      "types": "./dist/http/index.d.ts",
+      "import": "./dist/http/index.js",
+      "default": "./dist/http/index.js"
     }
   },
   "files": [

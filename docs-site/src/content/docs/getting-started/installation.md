@@ -33,6 +33,7 @@ pnpm add @smplcty/twilio       # → import { twilioVerifyHandler } from '@smplc
 | `@smplcty/auth/oidc` | the `oidcHandler` (needs `oauth4webapi`) |
 | `@smplcty/auth/twilio` | the `twilioVerifyHandler` (needs `@smplcty/twilio`) |
 | `@smplcty/auth/flat-tenant` | the `flatTenantScope` preset |
+| `@smplcty/auth/http` | the [HTTP transport tier](/simplicity-auth/http/transport/) — Web-standard `/auth/*` handlers (no new deps) |
 
 ## Schema
 

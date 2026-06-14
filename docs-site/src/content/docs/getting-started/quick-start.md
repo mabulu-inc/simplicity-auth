@@ -3,6 +3,14 @@ title: Quick start
 description: Sign a user in, create a session, and run a request under RLS.
 ---
 
+:::tip[The fastest path: mount the transport tier]
+If you want the whole sign-in surface — OTP, dev-OTP, and OIDC routes, the
+session cookie, and per-request auth — without wiring it yourself, mount
+[`@smplcty/auth/http`](/simplicity-auth/http/transport/) and supply a config.
+The rest of this page shows the **primitives** underneath it, for apps that want
+to drive the lifecycle directly.
+:::
+
 After you've verified a user's identity (via a [sign-in
 method](/simplicity-auth/methods/overview/)), the request lifecycle is:
 
