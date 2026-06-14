@@ -56,5 +56,8 @@ export async function findUserByCommunicationMethod(
     query.channel,
     query.code,
   ]);
-  return rows[0] ?? null;
+  const row = rows[0];
+  if (!row) return null;
+  // bigint ids arrive from pg as strings; the contract is `number`.
+  return { userId: Number(row.userId), userCommunicationMethodId: Number(row.userCommunicationMethodId) };
 }

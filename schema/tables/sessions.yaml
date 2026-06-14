@@ -10,7 +10,7 @@ columns:
     type: text
     primary_key: true
   - name: user_communication_method_id
-    type: integer
+    type: bigint
     nullable: false
     references:
       table: user_communication_methods

@@ -19,7 +19,7 @@ describe('withServiceContext', () => {
         `SELECT
             current_setting('app.actor_id', true)   AS actor,
             current_setting('app.session_id', true) AS sid,
-            current_user_id()                        AS cui`,
+            current_user_id()::int                   AS cui`,
       );
       return rows[0]!;
     });

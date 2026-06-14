@@ -43,6 +43,31 @@ describe('createSession', () => {
     expect(days).toBeLessThan(30.1);
   });
 
+  it('round-trips a bigint user id beyond int4 range', async () => {
+    // > 2^32, which an int4 column would reject — proves the ids are int8 —
+    // and within JS safe-integer range so it still returns as a `number`.
+    const BIG_USER = 5_000_000_000;
+    const BIG_UCM = 5_000_000_001;
+    const client = await db.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`SELECT set_config('app.actor_id', '1', true)`);
+      await client.query(`INSERT INTO users (user_id, name, kind) VALUES ($1, 'BigInt User', 'human')`, [BIG_USER]);
+      await client.query(
+        `INSERT INTO user_communication_methods (user_communication_method_id, user_id, communication_channel_id, code)
+         VALUES ($1, $2, 1, 'bigint@example.test')`,
+        [BIG_UCM, BIG_USER],
+      );
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
+
+    const session = await createSession(db.pool, { userCommunicationMethodId: BIG_UCM, ttl: '1 hour' });
+    expect(session.userId).toBe(BIG_USER);
+    expect(typeof session.userId).toBe('number');
+  });
+
   it('persists IP and geo metadata', async () => {
     const session = await createSession(db.pool, {
       userCommunicationMethodId: 1,

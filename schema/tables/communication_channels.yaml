@@ -2,7 +2,7 @@ table: communication_channels
 mixins: [soft_delete]
 columns:
   - name: communication_channel_id
-    type: serial
+    type: bigserial
     primary_key: true
   - name: name
     type: text

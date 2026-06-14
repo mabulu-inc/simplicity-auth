@@ -54,7 +54,8 @@ export async function withServiceContext<T>(
       throw new ServicePrincipalNotFoundError(serviceName);
     }
 
-    await setActorId(client, row.userId);
+    // bigint user_id arrives from pg as a string; setActorId wants a number.
+    await setActorId(client, Number(row.userId));
     await setSessionId(client, serviceName);
 
     return fn(client);

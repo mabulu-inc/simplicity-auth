@@ -26,7 +26,7 @@ describe('identity GUC helpers', () => {
       await withTransaction(db.pool, async (client) => {
         await setActorId(client, 42);
         const { rows } = await client.query<{ guc: string; cui: number }>(
-          `SELECT current_setting('app.actor_id', true) AS guc, current_user_id() AS cui`,
+          `SELECT current_setting('app.actor_id', true) AS guc, current_user_id()::int AS cui`,
         );
         expect(rows[0]?.guc).toBe('42');
         expect(rows[0]?.cui).toBe(42);

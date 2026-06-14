@@ -106,7 +106,8 @@ export async function withSession<TRole extends string = string, T = unknown>(
     }
 
     const ctx: SessionContext<TRole> = {
-      userId: row.userId,
+      // bigint user_id arrives from pg as a string; the contract is `number`.
+      userId: Number(row.userId),
       activeRole,
       roles: row.roles as TRole[],
       privileges: row.privileges,

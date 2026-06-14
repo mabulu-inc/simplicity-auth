@@ -80,9 +80,14 @@ export function createMethodRouter(options: MethodRouterOptions): MethodRouter {
         return null;
       }
       const { rows: authDomains } = await q.query<AuthDomain>(SELECT_AUTH_DOMAINS_BY_TENANT, [tenant.tenantId]);
+      // bigint ids arrive from pg as strings; the public shapes are `number`.
       return {
-        tenantId: tenant.tenantId,
-        authDomains,
+        tenantId: Number(tenant.tenantId),
+        authDomains: authDomains.map((d) => ({
+          ...d,
+          authDomainId: Number(d.authDomainId),
+          tenantId: Number(d.tenantId),
+        })),
         otpAllowed: tenant.allowOtp === true && !!otpHandler,
       };
     },

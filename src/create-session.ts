@@ -114,8 +114,9 @@ export async function createSession(db: Queryable, input: CreateSessionInput): P
   }
 
   return {
+    // bigint ids arrive from pg as strings; the public API is `number`.
     token,
-    userId: userRow.userId,
+    userId: Number(userRow.userId),
     createdAt: row.createdAt,
     expiresAt: row.expiresAt,
   };

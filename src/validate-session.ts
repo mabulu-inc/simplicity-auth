@@ -53,5 +53,6 @@ export async function validateSession(db: Queryable, token: string): Promise<Ses
     throw new SessionExpiredError(row.expiresAt);
   }
 
-  return row;
+  // bigint user_id arrives from pg as a string; the contract is `number`.
+  return { ...row, userId: Number(row.userId) };
 }

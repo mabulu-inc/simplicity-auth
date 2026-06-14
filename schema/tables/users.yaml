@@ -7,7 +7,7 @@ table: users
 mixins: [audit, soft_delete]
 columns:
   - name: user_id
-    type: serial
+    type: bigserial
     primary_key: true
   - name: name
     type: text

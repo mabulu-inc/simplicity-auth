@@ -66,7 +66,7 @@ describe('withSession', () => {
   it('current_user_id() reflects app.actor_id inside the request', async () => {
     const session = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 hour' });
     await withSession(db.pool, { token: session.token, roleName: 'user' }, async (client) => {
-      const { rows } = await client.query<{ id: number }>('SELECT current_user_id() AS id');
+      const { rows } = await client.query<{ id: number }>('SELECT current_user_id()::int AS id');
       expect(rows[0]?.id).toBe(2);
     });
   });

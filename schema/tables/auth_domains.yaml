@@ -16,10 +16,10 @@ table: auth_domains
 mixins: [audit, soft_delete]
 columns:
   - name: auth_domain_id
-    type: serial
+    type: bigserial
     primary_key: true
   - name: tenant_id
-    type: integer
+    type: bigint
     nullable: false
     references:
       table: tenants

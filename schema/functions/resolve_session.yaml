@@ -21,7 +21,7 @@ security: definer
 # Returns zero rows when no live session matches the hash (withSession maps
 # that to SessionNotFound). Returns one row with empty arrays when the
 # session exists but the user holds no roles.
-returns: TABLE(user_id integer, expires_at timestamptz, roles text[], default_role text, privileges text[])
+returns: TABLE(user_id bigint, expires_at timestamptz, roles text[], default_role text, privileges text[])
 args:
   - name: p_token_hash
     type: text

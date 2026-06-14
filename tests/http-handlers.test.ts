@@ -230,7 +230,8 @@ describe('createAuthHandlers — OIDC end-to-end', () => {
         [JSON.stringify({ issuer, clientId: 'mock-client', redirectUri: 'https://app.test/auth/oidc/callback' })],
       );
       await client.query('COMMIT');
-      authDomainId = rows[0]!.authDomainId;
+      // auth_domain_id is bigint → pg returns it as a string.
+      authDomainId = Number(rows[0]!.authDomainId);
     } finally {
       client.release();
     }

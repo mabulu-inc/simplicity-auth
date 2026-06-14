@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING (schema): identity columns are now `bigint` / `bigserial`.** All
+  identity primary keys and the foreign keys that reference them — `users`,
+  `tenants`, `roles`, `user_roles`, `auth_domains`, `communication_channels`,
+  `user_communication_methods`, `sessions`, `dev_otp_enrollments` — widened from
+  `serial`/`integer` to `bigserial`/`bigint`, and `current_user_id()` /
+  `resolve_session()` now return `bigint`. This matches the already-`bigint`
+  audit columns from `@smplcty/schema-std` and lets `bigint` apps consume the
+  schema by reference without a type conflict (schema-flow's `extend:` can't
+  change an imported column's type). The TypeScript API is unchanged — ids are
+  still `number`; the library parses the `bigint` values pg returns as strings
+  back to `number` at every boundary. **Fresh installs are unaffected; a
+  database already created with the previous `int4` schema must widen its
+  identity columns (schema-flow can't do `serial`→`bigserial` declaratively, so
+  it needs a one-off pre-script).**
+
 ## [2.1.0] - 2026-06-14
 
 ### Added

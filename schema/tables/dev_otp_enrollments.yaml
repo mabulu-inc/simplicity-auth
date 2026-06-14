@@ -4,7 +4,7 @@ columns:
   # The user_communication_method this enrollment is for. There can only
   # be one dev OTP enrollment per communication method (PK + FK).
   - name: user_communication_method_id
-    type: integer
+    type: bigint
     primary_key: true
     references:
       table: user_communication_methods

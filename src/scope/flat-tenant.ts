@@ -25,7 +25,7 @@ const SELECT_TENANTS = `
   SELECT
     COALESCE(
       array_agg(DISTINCT tenant_id) FILTER (WHERE tenant_id IS NOT NULL),
-      '{}'::integer[]
+      '{}'::bigint[]
     ) AS tenant_ids,
     COALESCE(bool_or(tenant_id IS NULL), false) AS all_tenants
   FROM user_roles

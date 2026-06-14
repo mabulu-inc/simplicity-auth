@@ -2,7 +2,7 @@ table: roles
 mixins: [audit, soft_delete]
 columns:
   - name: role_id
-    type: serial
+    type: bigserial
     primary_key: true
   - name: name
     type: varchar(50)

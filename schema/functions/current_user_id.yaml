@@ -8,10 +8,10 @@ volatility: stable
 #
 # Returns NULL when no actor is set (unauthenticated / outside a request
 # context) — RLS policies treat a NULL current user as "see nothing".
-returns: integer
+returns: bigint
 args: []
 body: |
-  SELECT NULLIF(current_setting('app.actor_id', true), '')::integer;
+  SELECT NULLIF(current_setting('app.actor_id', true), '')::bigint;
 comment: >
   Returns the current request's actor (users.user_id) from the
   app.actor_id GUC, or NULL if unset. The stable, RLS-friendly accessor

@@ -140,8 +140,10 @@ export function createAuthHandlers(config: AuthHttpConfig): AuthHandlers {
   async function resolveTenantId(request: Request): Promise<number | null> {
     const slug = await config.tenantSlugFromRequest(request);
     if (!slug) return null;
-    const { rows } = await pool.query<{ tenantId: number }>(SELECT_TENANT_ID, [slug]);
-    return rows[0]?.tenantId ?? null;
+    const { rows } = await pool.query<{ tenantId: string | number }>(SELECT_TENANT_ID, [slug]);
+    const id = rows[0]?.tenantId;
+    // bigint arrives from pg as a string; downstream validators want a number.
+    return id == null ? null : Number(id);
   }
 
   /** Create a session for the verified user and return the Set-Cookie value. */
@@ -317,5 +319,8 @@ export function createAuthHandlers(config: AuthHttpConfig): AuthHandlers {
 
 async function getAuthDomain(pool: Pool, authDomainId: number): Promise<AuthDomain<OidcParams> | null> {
   const { rows } = await pool.query<AuthDomain<OidcParams>>(SELECT_AUTH_DOMAIN, [authDomainId]);
-  return rows[0] ?? null;
+  const row = rows[0];
+  if (!row) return null;
+  // bigint ids arrive from pg as strings; the AuthDomain shape is `number`.
+  return { ...row, authDomainId: Number(row.authDomainId), tenantId: Number(row.tenantId) };
 }
