@@ -1,5 +1,5 @@
 table: user_communication_methods
-mixins: [soft_delete]
+mixins: [audit, soft_delete]
 columns:
   - name: user_communication_method_id
     type: bigserial

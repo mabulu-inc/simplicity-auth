@@ -18,12 +18,6 @@ columns:
     type: text
     nullable: false
 
-  # Human label for the enrollment — useful when an admin needs to
-  # know whose phone this is. Examples: "Sam's iPhone", "Mark's 1Password vault".
-  - name: label
-    type: text
-    nullable: false
-
   - name: enrolled_at
     type: timestamptz
     nullable: false

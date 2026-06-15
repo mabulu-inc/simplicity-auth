@@ -13,7 +13,6 @@ const SELECT_ENROLLMENT = `
   SELECT
     user_communication_method_id  AS "userCommunicationMethodId",
     totp_secret                   AS "totpSecret",
-    label                         AS "label",
     enrolled_at                   AS "enrolledAt",
     last_used_at                  AS "lastUsedAt",
     used_count                    AS "usedCount"
@@ -38,7 +37,6 @@ const RECORD_USE = `
 interface EnrollmentRow {
   userCommunicationMethodId: number;
   totpSecret: string;
-  label: string;
   enrolledAt: Date;
   lastUsedAt: Date | null;
   usedCount: number;

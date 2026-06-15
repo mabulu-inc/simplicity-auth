@@ -72,10 +72,12 @@ describe('soft delete', () => {
   });
 
   it('findUserByCommunicationMethod excludes a soft-deleted communication method', async () => {
-    // ucm is soft_delete-only (not audited), so no actor needed.
-    await db.pool.query(
-      `UPDATE user_communication_methods SET deleted_at = now() WHERE user_communication_method_id = 1`,
-    );
+    // ucm is audited, so the soft-delete UPDATE needs an actor for updated_by.
+    await withServiceContext(db.pool, 'transform-worker', async (client) => {
+      await client.query(
+        `UPDATE user_communication_methods SET deleted_at = now() WHERE user_communication_method_id = 1`,
+      );
+    });
     const found = await findUserByCommunicationMethod(db.pool, { channel: 'email', code: 'alice@acme.com' });
     expect(found).toBeNull();
   });

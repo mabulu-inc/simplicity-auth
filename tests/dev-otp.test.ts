@@ -24,11 +24,11 @@ beforeAll(async () => {
   db = await startTestDb();
   aliceSecret = generateDevOtpSecret();
   await db.pool.query(
-    `INSERT INTO dev_otp_enrollments (user_communication_method_id, totp_secret, label)
-     VALUES ($1, $2, $3)
+    `INSERT INTO dev_otp_enrollments (user_communication_method_id, totp_secret)
+     VALUES ($1, $2)
      ON CONFLICT (user_communication_method_id) DO UPDATE
        SET totp_secret = EXCLUDED.totp_secret`,
-    [ALICE_UCM_ID, aliceSecret, "Alice's test enrollment"],
+    [ALICE_UCM_ID, aliceSecret],
   );
 });
 

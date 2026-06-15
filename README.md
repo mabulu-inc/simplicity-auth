@@ -371,8 +371,8 @@ console.log(await qrcode.toString(uri, { type: 'terminal', small: true }));
 console.log(`\nManual entry secret: ${secret}\n`);
 console.log('After scanning, run this SQL against your database:');
 console.log(`
-INSERT INTO dev_otp_enrollments (user_communication_method_id, totp_secret, label)
-SELECT ucm.user_communication_method_id, '${secret}', '${label.replace(/'/g, "''")}'
+INSERT INTO dev_otp_enrollments (user_communication_method_id, totp_secret)
+SELECT ucm.user_communication_method_id, '${secret}'
 FROM user_communication_methods ucm
 JOIN communication_channels cc ON cc.communication_channel_id = ucm.communication_channel_id
 WHERE cc.name = 'phone' AND ucm.code = '${phone}';

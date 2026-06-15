@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **(schema): audit attribution on `communication_channels` and
+  `user_communication_methods`.** These long-lived tables previously tracked
+  only soft-delete state; they now carry the full `audit` mixin (`created_at` /
+  `updated_at` / `created_by` / `updated_by`), so you can see who added a
+  contact channel or registered a user's communication method, and when —
+  matching the attribution already on `users`, `tenants`, `roles`,
+  `user_roles`, and `auth_domains`. Rows seeded during migration are
+  back-filled to the `app-init` service principal by the existing audit
+  back-fill post-script, so no new migration step is required.
+
+### Removed
+
+- **(schema): dropped the unused `label` column from `dev_otp_enrollments`.**
+  It duplicated information already reachable through the foreign key
+  (`user_communication_methods` → `users.name` + the method's `code`), and the
+  library never read it — the authenticator-visible label is supplied directly
+  to `getDevOtpEnrollmentUri`. `dev_otp_enrollments` stays soft-delete-only
+  (un-audited, like `sessions`): every write to it is either creation or the
+  actor-less usage counter bumped by `verifyDevOtp` during pre-auth
+  verification, so there is no `updated_by` to attribute. Capture
+  "who enrolled this secret" as an application-level audit-log event if you
+  need it.
+
 ## [3.0.0] - 2026-06-14
 
 ### Changed
