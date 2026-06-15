@@ -18,16 +18,17 @@ describe('audit mixin (consumed from @smplcty/schema-std)', () => {
     await db.resetSessions();
   });
 
-  it('seeds carry audit columns, attributed to app-init (user 1)', async () => {
+  it('seeds carry audit columns, attributed to the app-init principal', async () => {
     const { rows } = await db.pool.query<{ created_by: string; updated_by: string }>(
       `SELECT created_by, updated_by FROM roles WHERE name = 'user'`,
     );
     // bigint comes back as a string from pg.
-    expect(rows[0]).toEqual({ created_by: '1', updated_by: '1' });
+    const appInit = String(db.ids.appInit);
+    expect(rows[0]).toEqual({ created_by: appInit, updated_by: appInit });
   });
 
   it('stamps created_by from app.actor_id on a write inside withSession', async () => {
-    const session = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 hour' }); // Alice = user 2
+    const session = await createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.alice, ttl: '1 hour' });
 
     const createdBy = await withSession(db.pool, { token: session.token, roleName: 'user' }, async (client) => {
       const { rows } = await client.query<{ created_by: string }>(
@@ -36,7 +37,7 @@ describe('audit mixin (consumed from @smplcty/schema-std)', () => {
       return rows[0]!.created_by;
     });
 
-    expect(createdBy).toBe('2'); // Alice
+    expect(createdBy).toBe(String(db.ids.users.alice)); // Alice
   });
 
   it('stamps created_by from the service principal inside withServiceContext', async () => {
@@ -47,6 +48,6 @@ describe('audit mixin (consumed from @smplcty/schema-std)', () => {
       return rows[0]!.created_by;
     });
 
-    expect(createdBy).toBe('6'); // transform-worker = user 6
+    expect(createdBy).toBe(String(db.ids.users.transformWorker)); // transform-worker
   });
 });

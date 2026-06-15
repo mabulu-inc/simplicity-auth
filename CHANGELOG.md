@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **(schema): seeded rows no longer pin literal ids.** The `app-init` service
+  principal and the standard `user` / `settings` / `security` roles are now
+  seeded without explicit primary keys — schema-flow matches them by their
+  natural keys (`name` + `kind` for the user, `name` for the roles), so re-runs
+  stay idempotent without a hard-coded id. The library already resolves these
+  rows by name, never by id, so nothing functional changes; the previous
+  "reserved ids 1–3, consumers use ≥ 100" convention for roles no longer
+  applies — add your own roles by name. Existing databases are unaffected
+  (their rows match by name and keep whatever ids they already have).
+
 ### Added
 
 - **(schema): audit attribution on `communication_channels` and

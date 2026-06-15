@@ -27,7 +27,7 @@ describe('revokeSession', () => {
   });
 
   it('soft-expires the session row', async () => {
-    const session = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 day' });
+    const session = await createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.alice, ttl: '1 day' });
     await revokeSession(db.pool, session.token);
 
     const { rows } = await db.pool.query<{ expires_at: Date }>(
@@ -39,7 +39,7 @@ describe('revokeSession', () => {
   });
 
   it('makes a previously-valid session fail validateSession', async () => {
-    const session = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 day' });
+    const session = await createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.alice, ttl: '1 day' });
     await validateSession(db.pool, session.token);
     await revokeSession(db.pool, session.token);
     await expect(validateSession(db.pool, session.token)).rejects.toBeInstanceOf(SessionExpiredError);
@@ -47,7 +47,7 @@ describe('revokeSession', () => {
 
   it('is idempotent — revoking unknown / already-revoked is not an error', async () => {
     await expect(revokeSession(db.pool, 'no-such-token')).resolves.toBeUndefined();
-    const session = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 day' });
+    const session = await createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.alice, ttl: '1 day' });
     await revokeSession(db.pool, session.token);
     await expect(revokeSession(db.pool, session.token)).resolves.toBeUndefined();
   });
@@ -71,21 +71,21 @@ describe('revokeUserSessions', () => {
   });
 
   it('revokes every active session for the user', async () => {
-    const a = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 day' });
-    const b = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 day' });
-    await revokeUserSessions(db.pool, 2); // Alice = user 2
+    const a = await createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.alice, ttl: '1 day' });
+    const b = await createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.alice, ttl: '1 day' });
+    await revokeUserSessions(db.pool, db.ids.users.alice);
 
     await expect(validateSession(db.pool, a.token)).rejects.toBeInstanceOf(SessionExpiredError);
     await expect(validateSession(db.pool, b.token)).rejects.toBeInstanceOf(SessionExpiredError);
   });
 
   it("does not touch a different user's sessions", async () => {
-    const alice = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 day' });
-    const bob = await createSession(db.pool, { userCommunicationMethodId: 2, ttl: '1 day' });
-    await revokeUserSessions(db.pool, 2);
+    const alice = await createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.alice, ttl: '1 day' });
+    const bob = await createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.bob, ttl: '1 day' });
+    await revokeUserSessions(db.pool, db.ids.users.alice);
 
     await expect(validateSession(db.pool, alice.token)).rejects.toBeInstanceOf(SessionExpiredError);
-    await expect(validateSession(db.pool, bob.token)).resolves.toMatchObject({ userId: 3 });
+    await expect(validateSession(db.pool, bob.token)).resolves.toMatchObject({ userId: db.ids.users.bob });
   });
 
   it('throws InvalidInputError on a bad userId', async () => {
@@ -107,26 +107,26 @@ describe('revokeTenantSessions', () => {
   });
 
   it('signs off members of the tenant but not wildcard (NULL) members', async () => {
-    // Seed: Alice (user 1) is on tenant 1; Bob (user 2) on tenants 1 and 2;
-    // GlobalAdmin (user 3) is a wildcard member (tenant_id IS NULL).
-    const alice = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 day' });
-    const bob = await createSession(db.pool, { userCommunicationMethodId: 2, ttl: '1 day' });
-    const admin = await createSession(db.pool, { userCommunicationMethodId: 3, ttl: '1 day' });
+    // Seed: Alice is on acme; Bob on acme and globex; GlobalAdmin is a
+    // wildcard member (tenant_id IS NULL).
+    const alice = await createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.alice, ttl: '1 day' });
+    const bob = await createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.bob, ttl: '1 day' });
+    const admin = await createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.globalAdmin, ttl: '1 day' });
 
-    await revokeTenantSessions(db.pool, 1);
+    await revokeTenantSessions(db.pool, db.ids.tenants.acme);
 
     // Alice and Bob are explicit members of tenant 1 → signed off.
     await expect(validateSession(db.pool, alice.token)).rejects.toBeInstanceOf(SessionExpiredError);
     await expect(validateSession(db.pool, bob.token)).rejects.toBeInstanceOf(SessionExpiredError);
     // GlobalAdmin is a wildcard member of no single tenant → untouched.
-    await expect(validateSession(db.pool, admin.token)).resolves.toMatchObject({ userId: 4 });
+    await expect(validateSession(db.pool, admin.token)).resolves.toMatchObject({ userId: db.ids.users.globalAdmin });
   });
 
   it('leaves other tenants alone', async () => {
-    // Only revoke tenant 2; Alice (tenant 1 only) keeps her session.
-    const alice = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 day' });
-    await revokeTenantSessions(db.pool, 2);
-    await expect(validateSession(db.pool, alice.token)).resolves.toMatchObject({ userId: 2 });
+    // Only revoke globex; Alice (acme only) keeps her session.
+    const alice = await createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.alice, ttl: '1 day' });
+    await revokeTenantSessions(db.pool, db.ids.tenants.globex);
+    await expect(validateSession(db.pool, alice.token)).resolves.toMatchObject({ userId: db.ids.users.alice });
   });
 
   it('throws InvalidInputError on a bad tenantId', async () => {

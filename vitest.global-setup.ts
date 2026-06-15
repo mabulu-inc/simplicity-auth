@@ -21,7 +21,6 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testconta
 const REPO_ROOT = import.meta.dirname;
 const FIXTURE = path.join(REPO_ROOT, 'tests/fixtures/seed-test-data.sql');
 const TEMPLATE_DB = 'auth_template';
-const APP_INIT_USER_ID = '1';
 
 let container: StartedPostgreSqlContainer | undefined;
 
@@ -64,7 +63,15 @@ export default async function setup(): Promise<() => Promise<void>> {
   const fixture = await readFile(FIXTURE, 'utf8');
   const seed = new pg.Pool({ connectionString: templateUri, max: 1 });
   try {
-    await seed.query(`SELECT set_config('app.actor_id', '${APP_INIT_USER_ID}', false);\n${fixture}`);
+    // Resolve the app-init principal by name — the schema pins no id. The id
+    // is a trusted integer from our own DB, so it's safe to inline (a
+    // parameterized query can't carry the fixture's multiple statements).
+    const { rows } = await seed.query<{ userId: string }>(
+      `SELECT user_id AS "userId" FROM users WHERE name = 'app-init' AND kind = 'service'`,
+    );
+    const appInitId = rows[0]?.userId;
+    if (!appInitId) throw new Error('app-init service principal not found after migration');
+    await seed.query(`SELECT set_config('app.actor_id', '${appInitId}', false);\n${fixture}`);
   } finally {
     await seed.end();
   }

@@ -13,15 +13,92 @@ function withDatabase(uri: string, dbName: string): string {
   return url.toString();
 }
 
+/**
+ * Ids of the seeded rows, resolved by natural key once per clone. Nothing in
+ * the schema or fixtures pins a literal id, so tests reference seeded rows
+ * through these semantic names instead of hard-coded numbers.
+ */
+export interface SeededIds {
+  /** The app-init service principal (migration-seeded). */
+  appInit: number;
+  /** user_id by persona name. */
+  users: { alice: number; bob: number; globalAdmin: number; noRoles: number; transformWorker: number };
+  /** user_communication_method_id by owning persona. */
+  ucm: { alice: number; bob: number; globalAdmin: number; noRoles: number };
+  /** communication_channel_id by channel name. */
+  channels: { email: number; phone: number };
+  /** tenant_id by slug. */
+  tenants: { acme: number; globex: number; initech: number };
+  /** role_id by name. */
+  roles: { user: number; settings: number; security: number; canExport: number };
+}
+
 export interface TestDb {
   /** A pg.Pool connected to this test file's cloned database. */
   pool: pg.Pool;
   /** Connection string for the same cloned database. */
   connectionString: string;
+  /** Ids of the seeded rows, resolved by natural key (see {@link SeededIds}). */
+  ids: SeededIds;
   /** TRUNCATE the sessions table. Used by tests that need a clean slate. */
   resetSessions: () => Promise<void>;
   /** Drop the cloned database and close pools. */
   shutdown: () => Promise<void>;
+}
+
+// bigint ids arrive from pg as strings; tests want numbers.
+async function loadIds(pool: pg.Pool): Promise<SeededIds> {
+  const userRows = await pool.query<{ name: string; id: string }>(
+    `SELECT name, user_id AS id FROM users WHERE name = ANY($1)`,
+    [['app-init', 'Alice', 'Bob', 'GlobalAdmin', 'NoRoles', 'transform-worker']],
+  );
+  const ucmRows = await pool.query<{ name: string; id: string }>(
+    `SELECT u.name, ucm.user_communication_method_id AS id
+     FROM user_communication_methods ucm
+     JOIN users u ON u.user_id = ucm.user_id`,
+  );
+  const channelRows = await pool.query<{ name: string; id: string }>(
+    `SELECT name, communication_channel_id AS id FROM communication_channels`,
+  );
+  const tenantRows = await pool.query<{ slug: string; id: string }>(`SELECT slug, tenant_id AS id FROM tenants`);
+  const roleRows = await pool.query<{ name: string; id: string }>(`SELECT name, role_id AS id FROM roles`);
+
+  const pick = (rows: Record<string, string>[], keyCol: string, val: string): number => {
+    const row = rows.find((r) => r[keyCol] === val);
+    if (!row) throw new Error(`seeded row not found: ${keyCol}=${val}`);
+    return Number(row.id);
+  };
+  const byName = (rows: { name: string; id: string }[], name: string) => pick(rows, 'name', name);
+  const bySlug = (rows: { slug: string; id: string }[], slug: string) => pick(rows, 'slug', slug);
+
+  return {
+    appInit: byName(userRows.rows, 'app-init'),
+    users: {
+      alice: byName(userRows.rows, 'Alice'),
+      bob: byName(userRows.rows, 'Bob'),
+      globalAdmin: byName(userRows.rows, 'GlobalAdmin'),
+      noRoles: byName(userRows.rows, 'NoRoles'),
+      transformWorker: byName(userRows.rows, 'transform-worker'),
+    },
+    ucm: {
+      alice: byName(ucmRows.rows, 'Alice'),
+      bob: byName(ucmRows.rows, 'Bob'),
+      globalAdmin: byName(ucmRows.rows, 'GlobalAdmin'),
+      noRoles: byName(ucmRows.rows, 'NoRoles'),
+    },
+    channels: { email: byName(channelRows.rows, 'email'), phone: byName(channelRows.rows, 'phone') },
+    tenants: {
+      acme: bySlug(tenantRows.rows, 'acme'),
+      globex: bySlug(tenantRows.rows, 'globex'),
+      initech: bySlug(tenantRows.rows, 'initech'),
+    },
+    roles: {
+      user: byName(roleRows.rows, 'user'),
+      settings: byName(roleRows.rows, 'settings'),
+      security: byName(roleRows.rows, 'security'),
+      canExport: byName(roleRows.rows, 'can_export'),
+    },
+  };
 }
 
 /**
@@ -64,10 +141,12 @@ export async function startTestDb(): Promise<TestDb> {
 
   const connectionString = withDatabase(adminUrl, dbName);
   const pool = new pg.Pool({ connectionString, max: 4 });
+  const ids = await loadIds(pool);
 
   return {
     pool,
     connectionString,
+    ids,
     async resetSessions() {
       await pool.query('TRUNCATE sessions');
     },

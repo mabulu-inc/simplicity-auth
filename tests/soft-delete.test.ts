@@ -25,7 +25,7 @@ describe('soft delete', () => {
   });
 
   it('honors a soft-deleted session: excluded entirely (treated as not found)', async () => {
-    const session = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 day' });
+    const session = await createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.alice, ttl: '1 day' });
     await validateSession(db.pool, session.token); // sanity: valid
 
     // The app sets deleted_at (sessions is not audited, so no actor needed);
@@ -44,9 +44,9 @@ describe('soft delete', () => {
   });
 
   it("a soft-deleted user's session no longer resolves", async () => {
-    const session = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 day' }); // Alice = user 2
+    const session = await createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.alice, ttl: '1 day' });
     await withServiceContext(db.pool, 'transform-worker', async (client) => {
-      await client.query(`UPDATE users SET deleted_at = now() WHERE user_id = 2`);
+      await client.query(`UPDATE users SET deleted_at = now() WHERE user_id = ${db.ids.users.alice}`);
     });
     await expect(
       withSession(db.pool, { token: session.token, roleName: 'user' }, async () => 'nope'),
@@ -55,18 +55,18 @@ describe('soft delete', () => {
 
   it('a soft-deleted role assignment drops out of the resolved roles', async () => {
     // Bob (user 3) holds 'user' + the 'can_export' privilege.
-    expect(await getUserRoleNames(db.pool, 3)).toEqual(['can_export', 'user']);
+    expect(await getUserRoleNames(db.pool, db.ids.users.bob)).toEqual(['can_export', 'user']);
 
     await withServiceContext(db.pool, 'transform-worker', async (client) => {
       await client.query(
         `UPDATE user_roles SET deleted_at = now()
-         WHERE user_id = 3 AND role_id = (SELECT role_id FROM roles WHERE name = 'can_export')`,
+         WHERE user_id = ${db.ids.users.bob} AND role_id = (SELECT role_id FROM roles WHERE name = 'can_export')`,
       );
     });
 
-    expect(await getUserRoleNames(db.pool, 3)).toEqual(['user']);
+    expect(await getUserRoleNames(db.pool, db.ids.users.bob)).toEqual(['user']);
 
-    const session = await createSession(db.pool, { userCommunicationMethodId: 2, ttl: '1 hour' }); // Bob
+    const session = await createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.bob, ttl: '1 hour' }); // Bob
     const ctx = await withSession(db.pool, { token: session.token, roleName: 'user' }, async (_c, ctx) => ctx);
     expect(ctx.privileges).toEqual([]); // can_export assignment soft-deleted
   });

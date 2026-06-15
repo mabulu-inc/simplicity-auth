@@ -34,30 +34,27 @@ indexes:
     unique: true
     where: 'deleted_at IS NULL'
     name: roles_name_key
-# The canonical role names shipped with @smplcty/auth. IDs 1-3 are
-# reserved for these standard mode roles. Consumers adding their own
-# roles (or privileges) should use IDs >= 100 to avoid colliding with
-# future standard-role additions. The library never references these IDs
-# directly — it always looks up by name — so the IDs are just a stable
-# convention for migration-time conflict detection.
+# The canonical role names shipped with @smplcty/auth. The library never
+# references roles by id — it always looks them up by name — so no ids are
+# pinned here: the seeds carry no role_id, and schema-flow matches them by
+# their natural columns (the partial-unique index on `name` backstops any
+# duplicate). Consumers add their own roles by name; there are no reserved
+# id ranges to avoid.
 #
-# Seeds use ON CONFLICT DO NOTHING via schema-flow, so re-running this
-# migration against an already-seeded database is a no-op.
+# seeds_on_conflict: DO NOTHING, so re-running this migration against an
+# already-seeded database is a no-op.
 seeds:
-  - role_id: 1
-    name: 'user'
+  - name: 'user'
     display_name: 'User'
     description: 'Standard signed-in user.'
     is_default: true
     is_privilege: false
-  - role_id: 2
-    name: 'settings'
+  - name: 'settings'
     display_name: 'Settings'
     description: 'Account and organisation settings access.'
     is_default: false
     is_privilege: false
-  - role_id: 3
-    name: 'security'
+  - name: 'security'
     display_name: 'Security'
     description: 'Security administration.'
     is_default: false

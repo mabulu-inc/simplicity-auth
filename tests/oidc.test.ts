@@ -128,9 +128,9 @@ describe('oidcHandler.complete', () => {
   }
 
   it('verifies the id_token and resolves the existing user', async () => {
-    // alice@acme.com is seeded as ucm 1 / user 2.
+    // alice@acme.com is a seeded communication method → resolves to Alice.
     const user = await runFlow({ email: 'alice@acme.com' });
-    expect(user).toEqual({ userId: 2, userCommunicationMethodId: 1 });
+    expect(user).toEqual({ userId: db.ids.users.alice, userCommunicationMethodId: db.ids.ucm.alice });
   });
 
   it('throws VerificationFailedError when the id_token has no email/preferred_username', async () => {
@@ -142,7 +142,9 @@ describe('oidcHandler.complete', () => {
   });
 
   it('provisions a new user via the provisionUser hook', async () => {
-    const provisioned = { userId: 4, userCommunicationMethodId: 3 };
+    // ghost@nowhere.test is not seeded; the hook fabricates a user, so these
+    // ids are synthetic (not seeded rows) and just flow back through unchanged.
+    const provisioned = { userId: 9001, userCommunicationMethodId: 9002 };
     const user = await runFlow({ email: 'ghost@nowhere.test', provisionUser: async () => provisioned });
     expect(user).toEqual(provisioned);
   });

@@ -25,10 +25,10 @@ describe('validateSession', () => {
   });
 
   it('returns the SessionInfo for a valid token', async () => {
-    const created = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 hour' });
+    const created = await createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.alice, ttl: '1 hour' });
 
     const validated = await validateSession(db.pool, created.token);
-    expect(validated.userId).toBe(2);
+    expect(validated.userId).toBe(db.ids.users.alice);
     expect(validated.expiresAt).toBeInstanceOf(Date);
     expect(validated.createdAt).toBeInstanceOf(Date);
     expect(validated.lastSeenAt).toBeNull();
@@ -39,7 +39,7 @@ describe('validateSession', () => {
   });
 
   it('throws SessionExpiredError when expires_at is in the past', async () => {
-    const created = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 hour' });
+    const created = await createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.alice, ttl: '1 hour' });
     await db.pool.query(`UPDATE sessions SET expires_at = now() - interval '1 minute' WHERE session_id = $1`, [
       hashToken(created.token),
     ]);

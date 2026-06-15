@@ -1,94 +1,97 @@
 -- Test-only seed data. Applied AFTER the canonical schema migration
--- (which seeds the standard 'user', 'settings', 'security' roles via
--- the seeds: block in schema/tables/roles.yaml).
+-- (which seeds the app-init service principal and the standard 'user',
+-- 'settings', 'security' roles via the seeds: blocks in schema/tables/).
 --
 -- This file is NOT shipped with the published package — it lives under
 -- tests/fixtures/ and is only loaded by the test helper.
 --
--- user_id=1 is the shipped app-init service principal (seeded by the
--- migration). Test users therefore start at 2:
---   2 Alice            — single tenant ('user' on tenant 1)
---   3 Bob              — multi-tenant ('user' on tenants 1 and 2) + 'can_export' privilege
---   4 GlobalAdmin      — global ('settings' with NULL tenant_id)
---   5 NoRoles          — no user_roles rows at all
---   6 transform-worker — service principal (kind='service'), no session
+-- No primary keys are assigned here: every row is identified by its natural
+-- key (name / slug / code), and cross-table references are resolved with
+-- subqueries on those keys. Tests look the resulting ids up the same way (see
+-- the `ids` map in tests/helpers/test-db.ts), so nothing depends on a literal
+-- id value or on insertion order.
 --
--- This whole file runs with app.actor_id = '1' (set by the test helper) so
--- the audit triggers stamp created_by/updated_by on every audited insert.
+-- The test personas:
+--   Alice            — single tenant ('user' on acme)
+--   Bob              — multi-tenant ('user' on acme and globex) + 'can_export' privilege
+--   GlobalAdmin      — global ('settings' with NULL tenant_id)
+--   NoRoles          — no user_roles rows at all
+--   transform-worker — service principal (kind='service'), no session
+--
+-- This whole file runs with app.actor_id set to the app-init principal (the
+-- test helper resolves it by name), so the audit triggers stamp
+-- created_by/updated_by on every audited insert.
 
 -- Tenants exercise the three sign-in shapes:
---   1 acme    (slug 'acme')    — two OIDC IdPs, SSO-only (allow_otp=false) → chooser
---   2 globex  (slug 'globex')  — one OIDC IdP, OTP also allowed          → auto-redirect
---   3 initech (slug 'initech') — no IdP                                  → OTP only
-INSERT INTO tenants (tenant_id, name, slug, allow_otp) VALUES
-  (1, 'acme', 'acme', false),
-  (2, 'globex', 'globex', true),
-  (3, 'initech', 'initech', true)
+--   acme    — two OIDC IdPs, SSO-only (allow_otp=false) → chooser
+--   globex  — one OIDC IdP, OTP also allowed            → auto-redirect
+--   initech — no IdP                                    → OTP only
+INSERT INTO tenants (name, slug, allow_otp) VALUES
+  ('acme', 'acme', false),
+  ('globex', 'globex', true),
+  ('initech', 'initech', true)
 ON CONFLICT DO NOTHING;
 
-INSERT INTO communication_channels (communication_channel_id, name) VALUES
-  (1, 'email'),
-  (2, 'phone')
+INSERT INTO communication_channels (name) VALUES
+  ('email'),
+  ('phone')
 ON CONFLICT DO NOTHING;
 
 -- A privilege (is_privilege=true) for exercising app.privileges export.
-INSERT INTO roles (role_id, name, display_name, is_privilege) VALUES
-  (100, 'can_export', 'Can Export', true)
+INSERT INTO roles (name, display_name, is_privilege) VALUES
+  ('can_export', 'Can Export', true)
 ON CONFLICT DO NOTHING;
 
-INSERT INTO users (user_id, name, kind) VALUES
-  (2, 'Alice', 'human'),
-  (3, 'Bob', 'human'),
-  (4, 'GlobalAdmin', 'human'),
-  (5, 'NoRoles', 'human'),
-  (6, 'transform-worker', 'service')
+INSERT INTO users (name, kind) VALUES
+  ('Alice', 'human'),
+  ('Bob', 'human'),
+  ('GlobalAdmin', 'human'),
+  ('NoRoles', 'human'),
+  ('transform-worker', 'service')
 ON CONFLICT DO NOTHING;
 
-INSERT INTO user_communication_methods
-  (user_communication_method_id, user_id, communication_channel_id, code) VALUES
-  (1, 2, 1, 'alice@acme.com'),
-  (2, 3, 1, 'bob@globex.com'),
-  (3, 4, 1, 'admin@system.com'),
-  (4, 5, 1, 'noroles@acme.com')
+INSERT INTO user_communication_methods (user_id, communication_channel_id, code)
+SELECT u.user_id, cc.communication_channel_id, v.code
+FROM (VALUES
+  ('Alice', 'email', 'alice@acme.com'),
+  ('Bob', 'email', 'bob@globex.com'),
+  ('GlobalAdmin', 'email', 'admin@system.com'),
+  ('NoRoles', 'email', 'noroles@acme.com')
+) AS v(user_name, channel_name, code)
+JOIN users u ON u.name = v.user_name
+JOIN communication_channels cc ON cc.name = v.channel_name
 ON CONFLICT DO NOTHING;
 
-INSERT INTO user_roles (user_id, role_id, tenant_id) VALUES
-  (2, (SELECT role_id FROM roles WHERE name = 'user'),       1),    -- Alice
-  (3, (SELECT role_id FROM roles WHERE name = 'user'),       1),    -- Bob, tenant 1
-  (3, (SELECT role_id FROM roles WHERE name = 'user'),       2),    -- Bob, tenant 2
-  (3, (SELECT role_id FROM roles WHERE name = 'can_export'), 1),    -- Bob, privilege
-  (4, (SELECT role_id FROM roles WHERE name = 'settings'),   NULL)  -- GlobalAdmin
+INSERT INTO user_roles (user_id, role_id, tenant_id)
+SELECT u.user_id, r.role_id, t.tenant_id
+FROM (VALUES
+  ('Alice', 'user', 'acme'),        -- Alice on acme
+  ('Bob', 'user', 'acme'),          -- Bob on acme
+  ('Bob', 'user', 'globex'),        -- Bob on globex
+  ('Bob', 'can_export', 'acme'),    -- Bob's privilege
+  ('GlobalAdmin', 'settings', NULL) -- GlobalAdmin, all tenants
+) AS v(user_name, role_name, tenant_slug)
+JOIN users u ON u.name = v.user_name
+JOIN roles r ON r.name = v.role_name
+LEFT JOIN tenants t ON t.slug = v.tenant_slug
 ON CONFLICT DO NOTHING;
 
--- Org-bound sign-in federation. acme (tenant 1) has two IdPs (chooser);
--- globex (tenant 2) has one (auto-redirect); initech (tenant 3) has none.
-INSERT INTO auth_domains (auth_domain_id, tenant_id, display_name, integration_type, integration_params) VALUES
-  (1, 1, 'Microsoft', 'oidc',
-     '{"issuer":"https://login.microsoftonline.com/acme","clientId":"acme-ms","authorizationEndpoint":"https://login.microsoftonline.com/acme/oauth2/v2.0/authorize","redirectUri":"https://acme.app.com/callback"}'::jsonb),
-  (2, 1, 'Google', 'oidc',
-     '{"issuer":"https://accounts.google.com","clientId":"acme-goog","authorizationEndpoint":"https://accounts.google.com/o/oauth2/v2/auth","redirectUri":"https://acme.app.com/callback"}'::jsonb),
-  (3, 2, 'Okta', 'oidc',
-     '{"issuer":"https://globex.okta.com","clientId":"globex-okta","authorizationEndpoint":"https://globex.okta.com/oauth2/v1/authorize","redirectUri":"https://globex.app.com/callback"}'::jsonb)
+-- Org-bound sign-in federation. acme has two IdPs (chooser); globex has one
+-- (auto-redirect); initech has none.
+INSERT INTO auth_domains (tenant_id, display_name, integration_type, integration_params)
+SELECT t.tenant_id, v.display_name, v.integration_type, v.integration_params::jsonb
+FROM (VALUES
+  ('acme', 'Microsoft', 'oidc',
+     '{"issuer":"https://login.microsoftonline.com/acme","clientId":"acme-ms","authorizationEndpoint":"https://login.microsoftonline.com/acme/oauth2/v2.0/authorize","redirectUri":"https://acme.app.com/callback"}'),
+  ('acme', 'Google', 'oidc',
+     '{"issuer":"https://accounts.google.com","clientId":"acme-goog","authorizationEndpoint":"https://accounts.google.com/o/oauth2/v2/auth","redirectUri":"https://acme.app.com/callback"}'),
+  ('globex', 'Okta', 'oidc',
+     '{"issuer":"https://globex.okta.com","clientId":"globex-okta","authorizationEndpoint":"https://globex.okta.com/oauth2/v1/authorize","redirectUri":"https://globex.app.com/callback"}')
+) AS v(tenant_slug, display_name, integration_type, integration_params)
+JOIN tenants t ON t.slug = v.tenant_slug
 ON CONFLICT DO NOTHING;
 
 -- Note: dev OTP enrollments are created at test runtime by the dev-otp
 -- test file's beforeAll hook (using generateDevOtpSecret), not seeded
 -- here. This keeps TOTP secrets out of the source tree and avoids
 -- false positives from secret scanners.
-
--- Reset sequences past the manually-assigned IDs so subsequent test
--- INSERTs (e.g. the rollback test that inserts a new tenant) get fresh
--- autoincrement IDs without colliding.
-SELECT setval('tenants_tenant_id_seq', (SELECT max(tenant_id) FROM tenants));
-SELECT setval(
-  'communication_channels_communication_channel_id_seq',
-  (SELECT max(communication_channel_id) FROM communication_channels)
-);
-SELECT setval('users_user_id_seq', (SELECT max(user_id) FROM users));
-SELECT setval('roles_role_id_seq', (SELECT max(role_id) FROM roles));
-SELECT setval('auth_domains_auth_domain_id_seq', (SELECT max(auth_domain_id) FROM auth_domains));
-SELECT setval(
-  'user_communication_methods_user_communication_method_id_seq',
-  (SELECT max(user_communication_method_id) FROM user_communication_methods)
-);
-SELECT setval('user_roles_user_role_id_seq', (SELECT max(user_role_id) FROM user_roles));

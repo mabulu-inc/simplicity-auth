@@ -24,9 +24,9 @@ describe('withServiceContext', () => {
       return rows[0]!;
     });
 
-    expect(gucs.actor).toBe('6'); // transform-worker = user 6 in the fixture
+    expect(gucs.actor).toBe(String(db.ids.users.transformWorker));
     expect(gucs.sid).toBe('transform-worker');
-    expect(gucs.cui).toBe(6);
+    expect(gucs.cui).toBe(db.ids.users.transformWorker);
   });
 
   it('returns the callback result', async () => {

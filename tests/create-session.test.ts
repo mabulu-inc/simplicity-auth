@@ -19,11 +19,11 @@ describe('createSession', () => {
   });
 
   it('returns a raw opaque token and stores only its hash', async () => {
-    const session = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '30 days' });
+    const session = await createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.alice, ttl: '30 days' });
 
     // 32 random bytes, base64url → 43 chars, URL/cookie-safe.
     expect(session.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(session.userId).toBe(2);
+    expect(session.userId).toBe(db.ids.users.alice);
     expect(session.createdAt).toBeInstanceOf(Date);
     expect(session.expiresAt).toBeInstanceOf(Date);
 
@@ -51,11 +51,11 @@ describe('createSession', () => {
     const client = await db.pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query(`SELECT set_config('app.actor_id', '1', true)`);
+      await client.query(`SELECT set_config('app.actor_id', '${db.ids.appInit}', true)`);
       await client.query(`INSERT INTO users (user_id, name, kind) VALUES ($1, 'BigInt User', 'human')`, [BIG_USER]);
       await client.query(
         `INSERT INTO user_communication_methods (user_communication_method_id, user_id, communication_channel_id, code)
-         VALUES ($1, $2, 1, 'bigint@example.test')`,
+         VALUES ($1, $2, ${db.ids.channels.email}, 'bigint@example.test')`,
         [BIG_UCM, BIG_USER],
       );
       await client.query('COMMIT');
@@ -70,7 +70,7 @@ describe('createSession', () => {
 
   it('persists IP and geo metadata', async () => {
     const session = await createSession(db.pool, {
-      userCommunicationMethodId: 1,
+      userCommunicationMethodId: db.ids.ucm.alice,
       ttl: '1 day',
       ip: '203.0.113.42',
       geo: { city: 'Springfield', region: 'IL', country: 'US', latitude: '39.7817', longitude: '-89.6501' },
@@ -91,7 +91,7 @@ describe('createSession', () => {
   });
 
   it('omits geo fields when not provided', async () => {
-    const session = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 hour' });
+    const session = await createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.alice, ttl: '1 hour' });
 
     const { rows } = await db.pool.query(
       'SELECT ip, city, region, country, latitude, longitude FROM sessions WHERE session_id = $1',
@@ -101,9 +101,9 @@ describe('createSession', () => {
   });
 
   it('throws InvalidInputError on missing ttl', async () => {
-    await expect(createSession(db.pool, { userCommunicationMethodId: 1, ttl: '' })).rejects.toBeInstanceOf(
-      InvalidInputError,
-    );
+    await expect(
+      createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.alice, ttl: '' }),
+    ).rejects.toBeInstanceOf(InvalidInputError);
   });
 
   it('throws InvalidInputError on invalid userCommunicationMethodId', async () => {
@@ -119,16 +119,16 @@ describe('createSession', () => {
 
   it('rejects malicious ttl strings via the parameterized interval cast', async () => {
     await expect(
-      createSession(db.pool, { userCommunicationMethodId: 1, ttl: "1 day'); DROP TABLE sessions; --" }),
+      createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.alice, ttl: "1 day'); DROP TABLE sessions; --" }),
     ).rejects.toThrow();
     const { rows } = await db.pool.query('SELECT count(*)::int AS n FROM sessions');
     expect(rows[0]?.n).toBe(0);
   });
 
   it('generates unique tokens across calls', async () => {
-    const a = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 hour' });
-    const b = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 hour' });
-    const c = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 hour' });
+    const a = await createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.alice, ttl: '1 hour' });
+    const b = await createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.alice, ttl: '1 hour' });
+    const c = await createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.alice, ttl: '1 hour' });
     expect(new Set([a.token, b.token, c.token]).size).toBe(3);
   });
 });

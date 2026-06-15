@@ -17,7 +17,7 @@ describe('touchSession', () => {
   });
 
   it('stamps last_seen_at and returns true for a live session', async () => {
-    const session = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 day' });
+    const session = await createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.alice, ttl: '1 day' });
     const touched = await touchSession(db.pool, session.token);
     expect(touched).toBe(true);
 
@@ -33,7 +33,7 @@ describe('touchSession', () => {
   });
 
   it('does not resurrect a revoked session (returns false)', async () => {
-    const session = await createSession(db.pool, { userCommunicationMethodId: 1, ttl: '1 day' });
+    const session = await createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.alice, ttl: '1 day' });
     await revokeSession(db.pool, session.token);
     expect(await touchSession(db.pool, session.token)).toBe(false);
   });

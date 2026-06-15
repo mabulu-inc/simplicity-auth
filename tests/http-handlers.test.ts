@@ -18,7 +18,7 @@ afterAll(async () => {
 });
 
 // A mock user-bound OTP handler: code '123456' verifies bob@globex.com
-// (seeded as ucm 2 / user 3); anything else fails.
+// (seeded → resolves to Bob); anything else fails.
 const mockOtp: MethodHandler = {
   async initiate() {
     return { otpSent: true };
@@ -27,7 +27,7 @@ const mockOtp: MethodHandler = {
     if (credential !== '123456' || identifier !== 'bob@globex.com') {
       throw new VerificationFailedError('bad code');
     }
-    return { userId: 3, userCommunicationMethodId: 2 };
+    return { userId: db.ids.users.bob, userCommunicationMethodId: db.ids.ucm.bob };
   },
 };
 
@@ -80,18 +80,18 @@ describe('createAuthHandlers — sign-in options', () => {
   it('lists a tenant’s OIDC IdPs and whether OTP is offered', async () => {
     const handlers = createAuthHandlers(makeConfig());
 
-    // acme (tenant 1): two IdPs, allow_otp=false → SSO-only.
+    // acme: two IdPs, allow_otp=false → SSO-only.
     const acme = await handlers.signInOptions(req('GET', 'https://app.test/auth/sign-in/options', { slug: 'acme' }));
     expect(acme.status).toBe(200);
     const acmeBody = (await acme.json()) as OptionsBody;
-    expect(acmeBody.tenantId).toBe(1);
+    expect(acmeBody.tenantId).toBe(db.ids.tenants.acme);
     expect(acmeBody.otpAllowed).toBe(false);
     expect(acmeBody.authDomains).toHaveLength(2);
     expect(acmeBody.authDomains.map((d) => d.displayName).sort()).toEqual(['Google', 'Microsoft']);
     // integration_params (issuer/clientId) are not leaked to the sign-in UI.
     expect(acmeBody.authDomains[0]).not.toHaveProperty('integrationParams');
 
-    // initech (tenant 3): no IdP, allow_otp=true + handler present → OTP offered.
+    // initech: no IdP, allow_otp=true + handler present → OTP offered.
     const initech = await handlers.signInOptions(
       req('GET', 'https://app.test/auth/sign-in/options', { slug: 'initech' }),
     );
@@ -134,7 +134,7 @@ describe('createAuthHandlers — OTP', () => {
       req('GET', 'https://app.test/auth/session', { cookie: `pn_session=${token}` }),
     );
     expect(session.status).toBe(200);
-    expect(await session.json()).toMatchObject({ authenticated: true, userId: 3 });
+    expect(await session.json()).toMatchObject({ authenticated: true, userId: db.ids.users.bob });
   });
 
   it('ignores an off-site returnTo (open-redirect guard), falling back to the default', async () => {
@@ -218,14 +218,14 @@ describe('createAuthHandlers — OIDC end-to-end', () => {
       return new Response('not found', { status: 404 });
     }) as typeof fetch;
 
-    // Seed an auth_domain for tenant 2 pointing at the mock IdP (actor=1 for audit).
+    // Seed an auth_domain for globex pointing at the mock IdP (app-init actor for audit).
     const client = await db.pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query(`SELECT set_config('app.actor_id', '1', true)`);
+      await client.query(`SELECT set_config('app.actor_id', '${db.ids.appInit}', true)`);
       const { rows } = await client.query<{ authDomainId: number }>(
         `INSERT INTO auth_domains (tenant_id, display_name, integration_type, integration_params)
-         VALUES (2, 'MockIdP', 'oidc', $1::jsonb)
+         VALUES (${db.ids.tenants.globex}, 'MockIdP', 'oidc', $1::jsonb)
          RETURNING auth_domain_id AS "authDomainId"`,
         [JSON.stringify({ issuer, clientId: 'mock-client', redirectUri: 'https://app.test/auth/oidc/callback' })],
       );
@@ -276,7 +276,7 @@ describe('createAuthHandlers — OIDC end-to-end', () => {
     const session = await handlers.session(
       req('GET', 'https://app.test/auth/session', { cookie: `pn_session=${sessionToken}` }),
     );
-    expect(await session.json()).toMatchObject({ authenticated: true, userId: 3 });
+    expect(await session.json()).toMatchObject({ authenticated: true, userId: db.ids.users.bob });
   });
 
   it('callback with a missing/forged login-state cookie is rejected (400)', async () => {

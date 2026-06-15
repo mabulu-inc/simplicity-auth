@@ -21,14 +21,15 @@ columns:
     nullable: false
     default: "'human'"
     check: "kind IN ('human', 'service')"
-# The bootstrap principal. user_id=1 is the app-init service user: the actor
-# every migration-time seed (this row, the standard roles, any consumer seeds)
-# is attributed to via app.actor_id. It seeds first (users seed before tables
-# that FK to it), and stamps its own created_by=1 (the self-reference resolves
-# because the row exists by the time the FK is checked). Consumers add their
-# own users at user_id >= 2.
+# The bootstrap principal: the app-init service user. It's the actor every
+# migration-time seed (this row, the standard roles, any consumer seeds) is
+# attributed to via app.actor_id, resolved by name — `audit_backfill_by`
+# looks it up with `WHERE name = 'app-init' AND kind = 'service'`, never by a
+# fixed id. It seeds first (users seed before tables that FK to it) and stamps
+# its own created_by (the self-reference resolves because the row exists by the
+# time the FK is checked). No id is pinned: the seed has no primary key, so
+# schema-flow matches it on (name, kind) and re-runs are a no-op.
 seeds:
-  - user_id: 1
-    name: 'app-init'
+  - name: 'app-init'
     kind: 'service'
 seeds_on_conflict: 'DO NOTHING'

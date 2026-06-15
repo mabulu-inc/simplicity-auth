@@ -18,7 +18,7 @@ describe('findUserByCommunicationMethod', () => {
       channel: 'email',
       code: 'alice@acme.com',
     });
-    expect(result).toEqual({ userId: 2, userCommunicationMethodId: 1 });
+    expect(result).toEqual({ userId: db.ids.users.alice, userCommunicationMethodId: db.ids.ucm.alice });
   });
 
   it('returns null for an unknown email', async () => {

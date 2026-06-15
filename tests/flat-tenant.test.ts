@@ -34,19 +34,24 @@ describe('flatTenantScope preset', () => {
   });
 
   it('sets a single tenant id for a single-tenant user', async () => {
-    const g = await tenantGucs(db, 1, 'user'); // Alice, tenant 1
-    expect(g.t).toBe('1');
+    const g = await tenantGucs(db, db.ids.ucm.alice, 'user'); // Alice, acme
+    expect(g.t).toBe(String(db.ids.tenants.acme));
     expect(g.a).toBe('false');
   });
 
   it('sets multiple tenant ids for a multi-tenant user', async () => {
-    const g = await tenantGucs(db, 2, 'user'); // Bob, tenants 1 & 2
-    expect(g.t.split(',').map(Number).sort()).toEqual([1, 2]);
+    const g = await tenantGucs(db, db.ids.ucm.bob, 'user'); // Bob, acme & globex
+    expect(
+      g.t
+        .split(',')
+        .map(Number)
+        .sort((a, b) => a - b),
+    ).toEqual([db.ids.tenants.acme, db.ids.tenants.globex].sort((a, b) => a - b));
     expect(g.a).toBe('false');
   });
 
   it('sets all_tenants=true for a wildcard (NULL tenant) member', async () => {
-    const g = await tenantGucs(db, 3, 'settings'); // GlobalAdmin, NULL tenant
+    const g = await tenantGucs(db, db.ids.ucm.globalAdmin, 'settings'); // GlobalAdmin, NULL tenant
     expect(g.a).toBe('true');
   });
 });
@@ -65,7 +70,7 @@ describe('privilege export', () => {
   });
 
   it('exports the user privileges, split from selectable roles', async () => {
-    const session = await createSession(db.pool, { userCommunicationMethodId: 2, ttl: '1 hour' }); // Bob
+    const session = await createSession(db.pool, { userCommunicationMethodId: db.ids.ucm.bob, ttl: '1 hour' }); // Bob
     const { ctx, guc } = await withSession(db.pool, { token: session.token, roleName: 'user' }, async (client, ctx) => {
       const { rows } = await client.query<{ p: string }>(`SELECT current_setting('app.privileges', true) AS p`);
       return { ctx, guc: rows[0]!.p };
