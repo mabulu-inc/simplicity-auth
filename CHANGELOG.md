@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "reserved ids 1–3, consumers use ≥ 100" convention for roles no longer
   applies — add your own roles by name. Existing databases are unaffected
   (their rows match by name and keep whatever ids they already have).
+  **Migrating this schema now requires `@smplcty/schema-flow >= 0.12.0`**,
+  which fully supports seeds with no primary keys.
 
 ### Added
 

@@ -455,12 +455,12 @@ The library ships its schema as schema-flow YAML inside the package at `@smplcty
 ```
 @smplcty/auth/schema/
 ├── tables/
-│   ├── users.yaml                       # + audit; seeds the app-init service user (id 1)
+│   ├── users.yaml                       # + audit; seeds the app-init service user (matched by name)
 │   ├── tenants.yaml                      # + audit; slug (sub-domain), allow_otp (SSO-only switch)
 │   ├── roles.yaml                        # + audit; seeds 'user' (default), 'settings', 'security'
 │   ├── user_roles.yaml                   # + audit; tenant_id NULL = wildcard / all tenants
-│   ├── communication_channels.yaml
-│   ├── user_communication_methods.yaml
+│   ├── communication_channels.yaml      # + audit
+│   ├── user_communication_methods.yaml  # + audit
 │   ├── auth_domains.yaml                 # + audit; tenant's IdP(s), 1:N, resolved by id (display_name = button)
 │   ├── sessions.yaml                     # PK = token hash; last_seen_at; geo
 │   └── dev_otp_enrollments.yaml
@@ -473,6 +473,8 @@ The library ships its schema as schema-flow YAML inside the package at `@smplcty
 
 ### Consuming with [`@smplcty/schema-flow`](https://www.npmjs.com/package/@smplcty/schema-flow)
 
+Requires **`@smplcty/schema-flow >= 0.12.0`** — the shipped seeds assign no primary keys (the app-init user and the standard roles are matched by their natural keys, `name`/`kind`), which earlier versions don't fully support.
+
 Import auth's schema and `@smplcty/schema-std` from your schema-flow config. See the reference [`schema-flow.config.yaml`](schema-flow.config.yaml):
 
 ```yaml
@@ -482,7 +484,7 @@ default:
     - package: '@smplcty/auth' # identity/tenant/auth_domains tables + resolve_session/current_user_id
 ```
 
-The `audit` mixin makes `created_by`/`updated_by` NOT NULL, stamped from `app.actor_id`. Rows seeded during migration have no request actor, so the shipped `post/` script back-fills them to the seeded `app-init` service user (`users.user_id = 1`) before the NOT NULL tighten phase — see the config for details.
+The `audit` mixin makes `created_by`/`updated_by` NOT NULL, stamped from `app.actor_id`. Rows seeded during migration have no request actor, so the shipped `post/` script back-fills them to the seeded `app-init` service user (resolved by name, not a fixed id) before the NOT NULL tighten phase — see the config for details.
 
 ### Soft delete
 
