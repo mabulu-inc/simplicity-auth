@@ -4,10 +4,10 @@ import type { MethodHandler, ResolvedUser } from '../src/index.js';
 import { twilioVerifyHandler } from '../src/methods/twilio/index.js';
 import { startTestDb, type TestDb } from './helpers/test-db.js';
 
-// An arbitrary resolved user returned by the stub OTP handler below. Its ids
-// are synthetic — not seeded rows — since the gating tests only assert that the
-// router passes the handler's result straight through.
-const stubUser: ResolvedUser = { userId: 9001, userCommunicationMethodId: 9002 };
+// The resolved user the stub OTP handler returns. Populated per-describe from
+// the seeded data (Bob) once the template is cloned; the gating tests only
+// assert that the router passes the handler's result straight through.
+let stubUser: ResolvedUser;
 
 function stubHandler(): MethodHandler & { initiate: ReturnType<typeof vi.fn>; complete: ReturnType<typeof vi.fn> } {
   return {
@@ -24,6 +24,7 @@ describe('createMethodRouter — discovery (signInOptions)', () => {
   let db: TestDb;
   beforeAll(async () => {
     db = await startTestDb();
+    stubUser = { userId: db.ids.users.bob, userCommunicationMethodId: db.ids.ucm.bob };
   });
   afterAll(async () => {
     await db.shutdown();
@@ -69,6 +70,7 @@ describe('createMethodRouter — OTP gating', () => {
   let db: TestDb;
   beforeAll(async () => {
     db = await startTestDb();
+    stubUser = { userId: db.ids.users.bob, userCommunicationMethodId: db.ids.ucm.bob };
   });
   afterAll(async () => {
     await db.shutdown();
@@ -103,6 +105,7 @@ describe('createMethodRouter — OTP gating', () => {
 
   it('fails closed for an unknown tenant', async () => {
     const router = createMethodRouter({ db: db.pool, otpHandler: stubHandler() });
+    // 99999: an id deliberately matching no seeded tenant.
     await expect(router.initiateOtp({ tenantId: 99999, identifier: 'a@b.com' })).rejects.toBeInstanceOf(
       OtpNotAllowedError,
     );
@@ -123,6 +126,7 @@ describe('twilioVerifyHandler via router.completeOtp', () => {
   let db: TestDb;
   beforeAll(async () => {
     db = await startTestDb();
+    stubUser = { userId: db.ids.users.bob, userCommunicationMethodId: db.ids.ucm.bob };
   });
   afterAll(async () => {
     await db.shutdown();

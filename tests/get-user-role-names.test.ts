@@ -40,7 +40,7 @@ describe('getUserRoleNames', () => {
   });
 
   it('returns an empty array for a non-existent userId', async () => {
-    const roles = await getUserRoleNames(db.pool, 999999);
+    const roles = await getUserRoleNames(db.pool, 999999); // an id matching no seeded user
     expect(roles).toEqual([]);
   });
 

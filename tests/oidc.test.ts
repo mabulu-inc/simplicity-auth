@@ -51,6 +51,9 @@ async function makeIdp(issuer: string, clientId: string) {
   return { fetchImpl, signIdToken };
 }
 
+// A synthetic in-memory AuthDomain for testing the handler in isolation (these
+// describes never touch the DB). The handler reads only integrationParams, so
+// authDomainId / tenantId are placeholders, not references to seeded rows.
 function authDomainFor(issuer: string, clientId = 'test-client'): AuthDomain<OidcParams> {
   return {
     authDomainId: 1,
@@ -142,9 +145,10 @@ describe('oidcHandler.complete', () => {
   });
 
   it('provisions a new user via the provisionUser hook', async () => {
-    // ghost@nowhere.test is not seeded; the hook fabricates a user, so these
-    // ids are synthetic (not seeded rows) and just flow back through unchanged.
-    const provisioned = { userId: 9001, userCommunicationMethodId: 9002 };
+    // ghost@nowhere.test isn't seeded, so the hook stands in for provisioning a
+    // fresh user. Its return flows straight back unchanged, so any seeded row
+    // works as the stand-in — NoRoles fits "newly provisioned, no roles yet".
+    const provisioned = { userId: db.ids.users.noRoles, userCommunicationMethodId: db.ids.ucm.noRoles };
     const user = await runFlow({ email: 'ghost@nowhere.test', provisionUser: async () => provisioned });
     expect(user).toEqual(provisioned);
   });

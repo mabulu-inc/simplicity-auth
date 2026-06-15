@@ -44,6 +44,8 @@ describe('parseCookies', () => {
 
 describe('login-state signing', () => {
   const secret = 'unit-test-secret';
+  // Arbitrary payload for the sign/verify roundtrip — no DB here, so the
+  // authDomainId is opaque test data, not a reference to a seeded row.
   const state: LoginState = {
     authDomainId: 7,
     state: 'state-xyz',
