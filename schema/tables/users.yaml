@@ -40,8 +40,8 @@ indexes:
 # fixed id. It seeds first (users seed before tables that FK to it) and stamps
 # its own created_by (the self-reference resolves because the row exists by the
 # time the FK is checked). No id is pinned: the seed has no primary key, so
-# schema-flow matches it on (name, kind) and re-runs are a no-op.
+# schema-flow matches it on (name, kind). Seeds are insert-only (schema-flow
+# >= 0.13.0 never overwrites an existing row), so re-runs are a no-op.
 seeds:
   - name: 'app-init'
     kind: 'service'
-seeds_on_conflict: 'DO NOTHING'

@@ -41,8 +41,9 @@ indexes:
 # duplicate). Consumers add their own roles by name; there are no reserved
 # id ranges to avoid.
 #
-# seeds_on_conflict: DO NOTHING, so re-running this migration against an
-# already-seeded database is a no-op.
+# Seeds are insert-only (schema-flow >= 0.13.0 never overwrites an existing
+# row), so re-running this migration against an already-seeded database is a
+# no-op — and a consumer's edits to these standard roles are never clobbered.
 seeds:
   - name: 'user'
     display_name: 'User'
@@ -59,4 +60,3 @@ seeds:
     description: 'Security administration.'
     is_default: false
     is_privilege: false
-seeds_on_conflict: 'DO NOTHING'

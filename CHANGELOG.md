@@ -16,6 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are unaffected — real people legitimately share names and are referenced by
   id. The name frees up again once a service user is soft-deleted.
 
+### Changed
+
+- **(schema): seeding is now insert-only; requires `@smplcty/schema-flow >=
+0.13.0`.** The shipped seeds (the `app-init` service user, the standard
+  roles) no longer carry the `seeds_on_conflict` setting — `schema-flow`
+  `0.13.0` makes "insert new rows, never overwrite existing ones" the default,
+  which is exactly the behaviour those seeds always wanted. Re-running a
+  migration stays a no-op, and a consumer's edits to the standard role rows
+  are no longer at risk of being clobbered on the next migration. Migrating
+  this schema now requires `@smplcty/schema-flow >= 0.13.0`.
+
 ## [4.0.0] - 2026-06-15
 
 ### Changed

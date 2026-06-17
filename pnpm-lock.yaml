@@ -25,8 +25,8 @@ importers:
         specifier: ^7.1.0
         version: 7.1.0(release-it@20.2.0(@types/node@25.9.3))
       '@smplcty/schema-flow':
-        specifier: ^0.12.0
-        version: 0.12.0
+        specifier: ^0.13.0
+        version: 0.13.0
       '@smplcty/twilio':
         specifier: ^0.1.1
         version: 0.1.1
@@ -524,8 +524,8 @@ packages:
     peerDependencies:
       pg: '>=8.0.0'
 
-  '@smplcty/schema-flow@0.12.0':
-    resolution: {integrity: sha512-dpjNo/ygtLFM5jGo63CKWMRw15LohbI6/rCN2PGKRnkafwFI5hRR0RxxMYEW/inMVX/DK0ehQtaqQ+8tIsaBMg==}
+  '@smplcty/schema-flow@0.13.0':
+    resolution: {integrity: sha512-4+mVAGFySDO4dSfbzvIDAACEo28VhINV8DQChugdQ6/+4LLDrzwK7iDDieY4yQh0Vpgha3DJs20/vOs68jLrIA==}
     engines: {node: '>=20'}
     hasBin: true
 
@@ -2568,7 +2568,7 @@ snapshots:
     dependencies:
       pg: 8.21.0
 
-  '@smplcty/schema-flow@0.12.0':
+  '@smplcty/schema-flow@0.13.0':
     dependencies:
       chalk: 5.6.2
       glob: 13.0.6

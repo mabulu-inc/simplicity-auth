@@ -473,7 +473,7 @@ The library ships its schema as schema-flow YAML inside the package at `@smplcty
 
 ### Consuming with [`@smplcty/schema-flow`](https://www.npmjs.com/package/@smplcty/schema-flow)
 
-Requires **`@smplcty/schema-flow >= 0.12.0`** — the shipped seeds assign no primary keys (the app-init user and the standard roles are matched by their natural keys, `name`/`kind`), which earlier versions don't fully support.
+Requires **`@smplcty/schema-flow >= 0.13.0`** — the shipped seeds assign no primary keys (the app-init user and the standard roles are matched by their natural keys, `name`/`kind`) and rely on insert-only seeding, where an existing row is never overwritten. `0.13.0` makes insert-only the default (the old per-table `seeds_on_conflict` knob is gone); on older versions these seeds would upsert and clobber any consumer edits to the standard roles on every migration.
 
 Import auth's schema and `@smplcty/schema-std` from your schema-flow config. See the reference [`schema-flow.config.yaml`](schema-flow.config.yaml):
 
