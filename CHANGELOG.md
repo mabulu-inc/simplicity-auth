@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-06-16
+
 ### Added
 
 - **(schema): ship the `email` and `phone` communication channels as seeds.**
@@ -246,7 +248,8 @@ Baseline release. Notes for this and earlier versions are on the
 [GitHub releases page](https://github.com/mabulu-inc/simplicity-auth/releases);
 the Keep a Changelog history starts from the next release.
 
-[Unreleased]: https://github.com/mabulu-inc/simplicity-auth/compare/v4.0.0...HEAD
+[Unreleased]: https://github.com/mabulu-inc/simplicity-auth/compare/v5.0.0...HEAD
+[5.0.0]: https://github.com/mabulu-inc/simplicity-auth/compare/v4.0.0...v5.0.0
 [4.0.0]: https://github.com/mabulu-inc/simplicity-auth/compare/v3.0.0...v4.0.0
 [3.0.0]: https://github.com/mabulu-inc/simplicity-auth/compare/v2.1.0...v3.0.0
 [2.1.0]: https://github.com/mabulu-inc/simplicity-auth/compare/v2.0.2...v2.1.0
