@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **(schema): service user names are now unique.** A partial-unique index
+  prevents two live service principals (`kind = 'service'`) from sharing a
+  name. Service users are looked up by name (background workers, audit
+  attribution), so a duplicate name made that lookup ambiguous. Human users
+  are unaffected — real people legitimately share names and are referenced by
+  id. The name frees up again once a service user is soft-deleted.
+
 ## [4.0.0] - 2026-06-15
 
 ### Changed

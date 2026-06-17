@@ -21,6 +21,18 @@ columns:
     nullable: false
     default: "'human'"
     check: "kind IN ('human', 'service')"
+indexes:
+  # Service users are principals resolved by name (audit_backfill_by looks up
+  # WHERE name = … AND kind = 'service'; see withServiceContext), so two live
+  # service rows sharing a name would make that lookup ambiguous. Enforce
+  # uniqueness of the name among live service users only. Humans are NOT
+  # constrained — real people legitimately share names and are referenced by
+  # id, never by name. Partial on deleted_at so a name frees up after the row
+  # is soft-deleted.
+  - columns: [name]
+    unique: true
+    where: "kind = 'service' AND deleted_at IS NULL"
+    name: users_service_name_key
 # The bootstrap principal: the app-init service user. It's the actor every
 # migration-time seed (this row, the standard roles, any consumer seeds) is
 # attributed to via app.actor_id, resolved by name — `audit_backfill_by`
