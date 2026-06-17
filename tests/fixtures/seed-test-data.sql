@@ -1,6 +1,7 @@
 -- Test-only seed data. Applied AFTER the canonical schema migration
--- (which seeds the app-init service principal and the standard 'user',
--- 'settings', 'security' roles via the seeds: blocks in schema/tables/).
+-- (which seeds the app-init service principal, the standard 'user',
+-- 'settings', 'security' roles, and the 'email' / 'phone' communication
+-- channels via the seeds: blocks in schema/tables/).
 --
 -- This file is NOT shipped with the published package — it lives under
 -- tests/fixtures/ and is only loaded by the test helper.
@@ -32,10 +33,8 @@ INSERT INTO tenants (name, slug, allow_otp) VALUES
   ('initech', 'initech', true)
 ON CONFLICT DO NOTHING;
 
-INSERT INTO communication_channels (name) VALUES
-  ('email'),
-  ('phone')
-ON CONFLICT DO NOTHING;
+-- communication_channels ('email', 'phone') are seeded by the canonical
+-- migration, so they already exist here — no need to re-seed them.
 
 -- A privilege (is_privilege=true) for exercising app.privileges export.
 INSERT INTO roles (name, display_name, is_privilege) VALUES

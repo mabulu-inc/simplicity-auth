@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **(schema): ship the `email` and `phone` communication channels as seeds.**
+  These are the two channels the library already resolves by name — the OIDC
+  handler matches users on `email`, and the Twilio method router maps an
+  identifier to `email` or `phone` — so a fresh database now has them out of
+  the box instead of requiring the app to insert them. Matched by name with no
+  pinned id and seeded insert-only, so re-runs are a no-op and consumers can
+  add their own channels by name.
+
 - **(schema): service user names are now unique.** A partial-unique index
   prevents two live service principals (`kind = 'service'`) from sharing a
   name. Service users are looked up by name (background workers, audit

@@ -13,3 +13,17 @@ indexes:
     unique: true
     where: 'deleted_at IS NULL'
     name: communication_channels_name_key
+# The two channels @smplcty/auth ships out of the box. The library resolves a
+# channel by name, never by id — the OIDC handler matches users on 'email',
+# and the Twilio method router's default resolver maps an identifier to
+# 'email' or 'phone' (see methods/twilio). No ids are pinned: the seeds carry
+# no communication_channel_id, so schema-flow matches them by `name` (the
+# partial-unique index backstops any duplicate). Consumers add their own
+# channels by name.
+#
+# Seeds are insert-only (schema-flow >= 0.13.0 never overwrites an existing
+# row), so re-running this migration against an already-seeded database is a
+# no-op.
+seeds:
+  - name: 'email'
+  - name: 'phone'
