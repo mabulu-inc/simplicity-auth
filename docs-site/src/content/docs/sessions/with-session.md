@@ -32,8 +32,9 @@ const widgets = await withSession(pool, { token, roleName: 'user' }, async (clie
 picks the active role:
 
 1. the requested `roleName` if given — must be one the user holds, else `RoleNotHeldError`;
-2. otherwise the user's **default** role (`roles.is_default`);
-3. otherwise **none** — a privilege-only request, which is **not** an error.
+2. otherwise the user's **sole** role, if they hold exactly one — counted by distinct name, so the same role across several tenants still counts as one. An admin who only holds `security` gets it activated without asking, so admins never need the default `user` role just to have an active role;
+3. otherwise the user's **default** role (`roles.is_default`) — the tie-breaker when they hold two or more;
+4. otherwise **none** — a privilege-only request, which is **not** an error.
 
 ## Errors
 

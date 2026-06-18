@@ -17,6 +17,18 @@ description: The guarantees @smplcty/auth makes.
 - **OIDC verification is delegated to `oauth4webapi`** (the spec-complete engine,
   using JWKS); auth core has no `oauth4webapi`/Twilio dependency — method
   handlers are opt-in subpaths with optional peers.
+- **Role-aware RLS ships on the identity tables** — `users`, `user_roles`,
+  `user_communication_methods`, `tenants`, and `auth_domains` are row-level
+  secured out of the box, keyed on the standard `user`/`settings`/`security`
+  roles and the user's `user_roles` (no app-specific columns). A plain user sees
+  only itself; a `security` admin manages users in tenants it administers; a
+  `settings` admin owns `auth_domains` and tenant creation. The bypass pool and
+  the `SECURITY DEFINER resolve_session` are unaffected.
+- **Privilege escalation is closed at the source** — raw `INSERT` on `users` is
+  denied by RLS; provisioning goes through `auth_create_user`, which refuses to
+  grant a tenant the caller does not administer (or an all-tenants role without
+  global authority). The library owns the grants on its tables too, so a
+  consuming app can't silently miss one.
 - **Soft-deleted rows stop taking effect immediately** — session resolution and
   user/role lookups exclude `deleted_at IS NOT NULL`.
 - **Audit attribution is enforced** — auditable tables' `created_by`/`updated_by`

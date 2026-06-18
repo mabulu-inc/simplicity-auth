@@ -46,7 +46,7 @@ const widgets = await withSession(pool, { token, roleName: 'user' }, async (clie
 });
 ```
 
-Active-role selection happens in TypeScript: the requested `roleName` if given (must be one the user holds), else the user's **default** role, else none — a privilege-only request is not an error. If the session doesn't exist, is expired/revoked, or the requested role isn't held, `withSession` throws **before** your callback runs.
+Active-role selection happens in TypeScript: the requested `roleName` if given (must be one the user holds), else the user's **sole** role if they hold exactly one (so an admin who only holds `security` never needs the default `user` role), else their **default** role, else none — a privilege-only request is not an error. If the session doesn't exist, is expired/revoked, or the requested role isn't held, `withSession` throws **before** your callback runs.
 
 ### Errors thrown by `withSession`
 
@@ -94,6 +94,32 @@ await withSession(pool, { token, roleName: 'user' }, fn, { scope });
 ```
 
 Apps with a richer model (producer/region/plant, rep hierarchy) ship their own hook, or enforce scope "function-carried" (RLS policies call functions that read `current_user_id()`).
+
+### The RLS toolkit
+
+The library ships role-aware, tenant-scoped RLS on its own tables (`users`, `tenants`, `user_roles`, `user_communication_methods`, `auth_domains`) — a `security` admin manages users and their roles within tenants they administer, a `settings` admin maintains `auth_domains` and (globally) creates tenants, and a plain user sees only itself. `roles` and `communication_channels` are public; `sessions` and `dev_otp_enrollments` are reached only through the bypass pool.
+
+Those policies are built from a few `SECURITY DEFINER` functions in `public` that **your app's policies can call too** — they read `user_roles` without the policies on it recursing, and `EXECUTE` is public:
+
+| Function                              | Use in a policy                                                                                                                                                                                                            |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `current_user_id()`                   | The request actor (`app.actor_id`) — the join key every policy keys on; `NULL` when unauthenticated.                                                                                                                       |
+| `auth_in_tenant(tenant_id)`           | The actor holds **any** role reaching that tenant.                                                                                                                                                                         |
+| `auth_has_role(role_name, tenant_id)` | The actor holds `role_name` over that tenant. A wildcard assignment (`user_roles.tenant_id IS NULL`) reaches every tenant; passing `NULL` for `tenant_id` means "global authority" — only a wildcard assignment qualifies. |
+
+Treat these three names as a **stable contract**: policies may depend on them. So any business table that carries a `tenant_id` gets isolation directly, and the checks compose with your own predicates:
+
+```yaml
+policies:
+  - { name: read, for: SELECT, to: app_user, using: 'auth_in_tenant(widgets.tenant_id)' }
+  - name: manage
+    for: ALL
+    to: app_user
+    using: "auth_has_role('settings', widgets.tenant_id)"
+    check: "auth_has_role('settings', widgets.tenant_id)"
+```
+
+**The `user_roles` contract.** Membership is `user_roles(user_id, role_id, tenant_id)`, where `tenant_id IS NULL` means _all tenants_ (a wildcard/global assignment). To model a finer hierarchy, `extend` `user_roles` with your own scope columns (`producer_id`, `region_id`, … — each `NULL` = wildcard at that level) and write a `SECURITY DEFINER` view or function that expands a user's assignments down your hierarchy tables. That expansion is app-owned because only your app has those tables; auth gives you the identity key and the tenant/role checks to build it on. The same wildcard rule applies at every level: `scope_col IS NULL OR scope_col = row.scope_col`.
 
 ## Background work — `withServiceContext`
 
