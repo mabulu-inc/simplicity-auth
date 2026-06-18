@@ -13,6 +13,17 @@ function withDatabase(uri: string, dbName: string): string {
   return url.toString();
 }
 
+// Swap the admin credentials on a connection string for the non-superuser
+// `app_user` role (login enabled by the global setup). Lets a test exercise the
+// library's grants as the role the app actually runs as, instead of a superuser
+// that holds every privilege.
+function withAppUser(uri: string): string {
+  const url = new URL(uri);
+  url.username = process.env.AUTH_TEST_APP_USER ?? 'app_user';
+  url.password = process.env.AUTH_TEST_APP_USER_PASSWORD ?? '';
+  return url.toString();
+}
+
 /**
  * Ids of the seeded rows, resolved by natural key once per clone. Nothing in
  * the schema or fixtures pins a literal id, so tests reference seeded rows
@@ -38,6 +49,8 @@ export interface TestDb {
   pool: pg.Pool;
   /** Connection string for the same cloned database. */
   connectionString: string;
+  /** Same cloned database, authenticated as the non-superuser `app_user` role. */
+  appUserConnectionString: string;
   /** Ids of the seeded rows, resolved by natural key (see {@link SeededIds}). */
   ids: SeededIds;
   /** TRUNCATE the sessions table. Used by tests that need a clean slate. */
@@ -146,6 +159,7 @@ export async function startTestDb(): Promise<TestDb> {
   return {
     pool,
     connectionString,
+    appUserConnectionString: withAppUser(connectionString),
     ids,
     async resetSessions() {
       await pool.query('TRUNCATE sessions');

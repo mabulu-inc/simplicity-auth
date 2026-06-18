@@ -1,5 +1,5 @@
 table: roles
-mixins: [audit, soft_delete]
+mixins: [audit, soft_delete, auth_grants]
 columns:
   - name: role_id
     type: bigserial
@@ -12,9 +12,11 @@ columns:
     type: text
   - name: description
     type: text
-  # The role auto-selected by withSession when no roleName is requested.
-  # An app should mark exactly one is_privilege=false role as default;
-  # the library just picks the first default it finds.
+  # The role withSession auto-selects when no roleName is requested AND the
+  # user holds more than one role. A user who holds exactly one role always
+  # gets that one (default or not), so is_default only breaks ties for
+  # multi-role users. An app should mark exactly one is_privilege=false role as
+  # default; the library picks the first default it finds.
   - name: is_default
     type: boolean
     nullable: false

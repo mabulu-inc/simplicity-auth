@@ -1,0 +1,25 @@
+name: auth_in_tenant
+language: plpgsql
+volatility: stable
+security: definer
+# True when the current actor holds ANY role reaching `target_tenant_id`
+# (directly or via a wildcard assignment). Used where visibility is granted to
+# every member of a tenant regardless of which role they hold — e.g. a tenant
+# row is visible to anyone with access to that tenant.
+returns: boolean
+args:
+  - name: target_tenant_id
+    type: bigint
+body: |
+  BEGIN
+    RETURN current_user_id() IS NOT NULL AND EXISTS (
+      SELECT 1
+      FROM user_roles ur
+      WHERE ur.user_id = current_user_id()
+        AND ur.deleted_at IS NULL
+        AND (ur.tenant_id IS NULL OR ur.tenant_id = target_tenant_id)
+    );
+  END;
+comment: >
+  True if the current actor holds any role reaching target_tenant_id. SECURITY
+  DEFINER so RLS policies can call it without recursing on user_roles.

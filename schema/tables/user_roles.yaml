@@ -1,5 +1,5 @@
 table: user_roles
-mixins: [audit, soft_delete]
+mixins: [audit, soft_delete, auth_grants]
 columns:
   - name: user_role_id
     type: bigserial
@@ -24,3 +24,34 @@ columns:
     references:
       table: tenants
       column: tenant_id
+# RLS. You can read your own role assignments; a security admin can read and
+# manage assignments in the tenants where they hold security. Writing an
+# assignment requires holding security over that tenant — and because
+# auth_has_role(..., NULL) only matches a wildcard assignment, granting an
+# all-tenants (global) role requires holding security globally. This is the same
+# rule auth_create_user enforces, applied to changing an existing user's roles.
+rls: true
+policies:
+  - name: user_roles_select
+    for: SELECT
+    to: app_user
+    permissive: true
+    using: |-
+      user_roles.user_id = current_user_id()
+      OR auth_has_role('security', user_roles.tenant_id)
+  - name: user_roles_insert
+    for: INSERT
+    to: app_user
+    permissive: true
+    check: auth_has_role('security', user_roles.tenant_id)
+  - name: user_roles_update
+    for: UPDATE
+    to: app_user
+    permissive: true
+    using: auth_has_role('security', user_roles.tenant_id)
+    check: auth_has_role('security', user_roles.tenant_id)
+  - name: user_roles_delete
+    for: DELETE
+    to: app_user
+    permissive: true
+    using: auth_has_role('security', user_roles.tenant_id)

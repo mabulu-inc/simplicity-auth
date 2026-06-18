@@ -13,7 +13,7 @@ table: auth_domains
 # Absorbed from @smplcty/oidc by the own-domain rule: auth_domains is
 # auth's data model, so auth ships it. Rows are configured at runtime
 # (admin UI) and resolved by auth_domain_id — there is no stable text key.
-mixins: [audit, soft_delete]
+mixins: [audit, soft_delete, auth_grants]
 columns:
   - name: auth_domain_id
     type: bigserial
@@ -41,3 +41,15 @@ columns:
     type: jsonb
     nullable: false
     default: "'{}'::jsonb"
+# RLS. Federation config is a settings concern: a settings admin sees and
+# maintains the auth_domains of the tenants they have settings access to. (Sign-
+# in itself reads auth_domains through the bypass pool pre-session, so ordinary
+# users never need direct access here.)
+rls: true
+policies:
+  - name: auth_domains_settings
+    for: ALL
+    to: app_user
+    permissive: true
+    using: auth_has_role('settings', auth_domains.tenant_id)
+    check: auth_has_role('settings', auth_domains.tenant_id)

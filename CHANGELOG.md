@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **(runtime): `withSession` now auto-selects a user's sole role.** When no
+  `roleName` is requested, a user who holds exactly one role gets it as their
+  active role — whether or not it is flagged default — so an admin who only
+  holds `security` (or a settings-only admin) no longer needs to also be granted
+  the default `user` role just to get an active role. Roles are counted by name,
+  so the same role held across several tenants still counts as one. A user with
+  two or more distinct roles (e.g. different roles in different tenants) is
+  unchanged: it falls back to the default role, or none if there isn't one.
+
+### Added
+
+- **(schema): role-aware, tenant-scoped row-level security on the auth tables.**
+  The library now ships RLS so a consuming app gets correct multi-tenant
+  isolation out of the box — keyed entirely on its own `user_roles` and the
+  standard `user` / `settings` / `security` roles, with no app-specific columns,
+  so it never reaches into the business domain. `app_user` sees `tenants` it
+  belongs to; a `settings` admin maintains `auth_domains` for tenants they
+  administer and (with global access) creates tenants; a `security` admin manages
+  the `users`, `user_roles`, and `user_communication_methods` of the tenants they
+  administer, while a plain user sees only its own identity rows. `roles` and
+  `communication_channels` stay public; `sessions` and `dev_otp_enrollments` are
+  reached only through the bypass pool. The admin/bypass pool and the
+  `SECURITY DEFINER resolve_session` are unaffected.
+
+- **(schema): `auth_create_user(jsonb)` — authority-checked, atomic user
+  provisioning.** Creating a user, its communication methods, and its role
+  assignments now happens in one call that refuses to leave a half-provisioned
+  user behind (at least one access and one contact method are required) and
+  enforces that the caller holds `security` over every tenant being granted — a
+  tenant-scoped admin cannot create a global user or grant access to a tenant
+  they do not administer. Raw `INSERT` on `users` is closed under RLS, so this is
+  the app's path to provision a user; OIDC auto-provisioning still runs through
+  the bypass pool.
+
+- **(schema): the library now ships the grants on its own tables.** Every auth
+  table grants `SELECT, INSERT, UPDATE, DELETE` to an `app_user` role, so a
+  consuming app no longer hand-writes a grant-only extend per table and can't
+  miss one — the failure mode that silently broke OTP sign-in when
+  `dev_otp_enrollments` was overlooked (the pre-send enrollment read ran through
+  the app pool and hit `permission denied`, while `/sign-in` still returned 200).
+  The library grants to `app_user` but deliberately does **not** declare the
+  role — the consuming app (or its infra) owns role creation and credentials —
+  so the grants land on whatever `app_user` the deployment already provisions
+  and never collide with that declaration. On a database where the role does not
+  yet exist the migration's `GRANT` fails fast, which is the correct signal to
+  provision it first. A consumer whose login role is named differently creates
+  `app_user` and grants it to that role (`GRANT app_user TO <role>`). Sequence
+  `USAGE` for the serial primary keys is granted automatically, so inserts work
+  without extra configuration.
+
+### Fixed
+
+- **(schema): back-fill the standard role values on databases that already had
+  the `roles` rows.** Seeds are insert-only, so a database that gained the
+  `display_name` / `description` / `is_default` / `is_privilege` columns _after_
+  its role rows already existed kept the column defaults — most importantly
+  `is_default = false` on every role, which left `withSession` with no default
+  role to select. A migration post-script now sets the canonical values on any
+  never-seeded standard role (`user`, `settings`, `security`), guarded so it is
+  a no-op on a fresh database and never touches a role a consumer has renamed or
+  customised.
+
 ## [5.0.0] - 2026-06-16
 
 ### Added

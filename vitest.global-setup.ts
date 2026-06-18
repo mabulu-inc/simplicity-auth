@@ -21,6 +21,10 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testconta
 const REPO_ROOT = import.meta.dirname;
 const FIXTURE = path.join(REPO_ROOT, 'tests/fixtures/seed-test-data.sql');
 const TEMPLATE_DB = 'auth_template';
+// The non-superuser role the library grants its tables to. Tests connect as it
+// to verify the grants; the password is throwaway (ephemeral test container).
+const APP_USER = 'app_user';
+const APP_USER_PASSWORD = 'app_user_test';
 
 let container: StartedPostgreSqlContainer | undefined;
 
@@ -40,10 +44,18 @@ export default async function setup(): Promise<() => Promise<void>> {
   const adminUri = container.getConnectionUri();
   const templateUri = withDatabase(adminUri, TEMPLATE_DB);
 
-  // 1. Create the template database (from the maintenance `postgres` db).
+  // 1. Create the template database and the app_user role. The library grants
+  //    its tables to app_user but does NOT declare the role — a consuming app
+  //    (or its infra) owns role creation and credentials — so the harness
+  //    provisions it here, before the migration runs the GRANTs. It gets a
+  //    login + throwaway password so tests can connect AS app_user and prove
+  //    the grants actually work (the regular admin pool is a superuser holding
+  //    every privilege, which is how a missing grant once reached prod). Roles
+  //    are cluster-global, so this covers every clone.
   const admin = new pg.Pool({ connectionString: adminUri, max: 1 });
   try {
     await admin.query(`CREATE DATABASE ${TEMPLATE_DB}`);
+    await admin.query(`CREATE ROLE ${APP_USER} LOGIN PASSWORD '${APP_USER_PASSWORD}'`);
   } finally {
     await admin.end();
   }
@@ -78,6 +90,8 @@ export default async function setup(): Promise<() => Promise<void>> {
 
   process.env.AUTH_TEST_ADMIN_URL = adminUri;
   process.env.AUTH_TEST_TEMPLATE_DB = TEMPLATE_DB;
+  process.env.AUTH_TEST_APP_USER = APP_USER;
+  process.env.AUTH_TEST_APP_USER_PASSWORD = APP_USER_PASSWORD;
 
   return async () => {
     await container?.stop();

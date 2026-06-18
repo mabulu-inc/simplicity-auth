@@ -1,0 +1,82 @@
+name: auth_create_user
+language: plpgsql
+security: definer
+# The authority-checked, atomic way for an app_user (a security admin) to
+# provision a human user. Raw INSERT on `users` is closed under RLS — a user
+# must never exist without the roles and contact methods that make it usable,
+# and the grant of access must be authorized — so creation funnels through here.
+#
+# `user_data` shape:
+#   {
+#     "name": "Ada Lovelace",
+#     "communication_methods": [ { "channel": "email", "code": "ada@acme.com" } ],
+#     "accesses":              [ { "tenant_id": 5, "role_id": 2 } ]
+#   }
+# At least one communication method and one access are required. `channel` is
+# resolved by name; `tenant_id`/`role_id` are ids the caller already resolved
+# (the library pins none). A NULL/absent tenant_id is an all-tenants grant.
+#
+# Authority: the caller must hold `security` over every tenant in `accesses`;
+# an all-tenants grant requires holding `security` globally. Any failure aborts
+# the whole call — no partially-provisioned user is left behind. SECURITY
+# DEFINER does the writes RLS would otherwise block, but current_user_id() still
+# resolves to the caller, so the checks run against the calling admin.
+returns: bigint
+args:
+  - name: user_data
+    type: jsonb
+body: |
+  DECLARE
+    v_user_id bigint;
+    v_access  jsonb;
+    v_methods int;
+  BEGIN
+    IF current_user_id() IS NULL THEN
+      RAISE EXCEPTION 'auth_create_user: no authenticated actor (app.actor_id is unset)';
+    END IF;
+
+    IF jsonb_typeof(user_data -> 'accesses') IS DISTINCT FROM 'array'
+       OR jsonb_array_length(user_data -> 'accesses') = 0 THEN
+      RAISE EXCEPTION 'auth_create_user: at least one access (tenant_id + role_id) is required';
+    END IF;
+
+    IF jsonb_typeof(user_data -> 'communication_methods') IS DISTINCT FROM 'array'
+       OR jsonb_array_length(user_data -> 'communication_methods') = 0 THEN
+      RAISE EXCEPTION 'auth_create_user: at least one communication method is required';
+    END IF;
+
+    -- Authority: a security admin for each granted tenant; a global (NULL
+    -- tenant) grant requires holding security globally.
+    FOR v_access IN SELECT * FROM jsonb_array_elements(user_data -> 'accesses')
+    LOOP
+      IF NOT auth_has_role('security', (v_access ->> 'tenant_id')::bigint) THEN
+        RAISE EXCEPTION 'auth_create_user: not authorized to grant access to tenant %',
+          COALESCE(v_access ->> 'tenant_id', 'ALL');
+      END IF;
+    END LOOP;
+
+    INSERT INTO users (name, kind)
+    VALUES (user_data ->> 'name', 'human')
+    RETURNING user_id INTO v_user_id;
+
+    INSERT INTO user_communication_methods (user_id, communication_channel_id, code)
+    SELECT v_user_id, cc.communication_channel_id, m ->> 'code'
+    FROM jsonb_array_elements(user_data -> 'communication_methods') AS m
+    JOIN communication_channels cc
+      ON cc.name = m ->> 'channel' AND cc.deleted_at IS NULL;
+    GET DIAGNOSTICS v_methods = ROW_COUNT;
+    IF v_methods = 0 THEN
+      RAISE EXCEPTION 'auth_create_user: no communication method matched a known channel';
+    END IF;
+
+    INSERT INTO user_roles (user_id, tenant_id, role_id)
+    SELECT v_user_id, (a ->> 'tenant_id')::bigint, (a ->> 'role_id')::bigint
+    FROM jsonb_array_elements(user_data -> 'accesses') AS a;
+
+    RETURN v_user_id;
+  END;
+comment: >
+  Authority-checked, atomic human-user provisioning (user + communication
+  methods + role assignments). The only app_user path to create a user, since
+  RLS closes raw INSERT on users. Requires the caller to hold security over
+  every granted tenant (global security for an all-tenants grant).

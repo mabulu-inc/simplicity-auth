@@ -1,5 +1,5 @@
 table: user_communication_methods
-mixins: [audit, soft_delete]
+mixins: [audit, soft_delete, auth_grants]
 columns:
   - name: user_communication_method_id
     type: bigserial
@@ -25,3 +25,19 @@ indexes:
     unique: true
     where: 'deleted_at IS NULL'
     name: user_communication_methods_channel_code_key
+# RLS. A communication method follows its owning user: you manage your own, and
+# a security admin manages those of users they administer (auth_can_admin_user).
+# Since a plain user can only "see" themselves, they can only touch their own
+# contact methods; a security admin reaches every user in their tenants.
+rls: true
+policies:
+  - name: user_communication_methods_access
+    for: ALL
+    to: app_user
+    permissive: true
+    using: |-
+      user_communication_methods.user_id = current_user_id()
+      OR auth_can_admin_user(user_communication_methods.user_id)
+    check: |-
+      user_communication_methods.user_id = current_user_id()
+      OR auth_can_admin_user(user_communication_methods.user_id)

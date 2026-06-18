@@ -1,5 +1,5 @@
 table: communication_channels
-mixins: [audit, soft_delete]
+mixins: [audit, soft_delete, auth_grants]
 columns:
   - name: communication_channel_id
     type: bigserial

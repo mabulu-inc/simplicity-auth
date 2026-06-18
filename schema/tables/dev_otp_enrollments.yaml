@@ -1,5 +1,5 @@
 table: dev_otp_enrollments
-mixins: [soft_delete]
+mixins: [soft_delete, auth_grants]
 columns:
   # The user_communication_method this enrollment is for. There can only
   # be one dev OTP enrollment per communication method (PK + FK).

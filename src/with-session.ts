@@ -41,8 +41,9 @@ interface ResolvedRow {
  *
  * Active-role selection (in TS, not the resolver):
  *   1. `roleName` if given — must be one the user holds, else {@link RoleNotHeldError}.
- *   2. otherwise the user's default role, if any.
- *   3. otherwise none — a privilege-only request, which is **not** an error.
+ *   2. otherwise the user's sole role, if they hold exactly one.
+ *   3. otherwise the user's default role, if any.
+ *   4. otherwise none — a privilege-only request, which is **not** an error.
  *
  * Identity GUCs are transaction-local, so they vanish on COMMIT/ROLLBACK —
  * no cross-request leakage. Scope GUCs are not set here: pass a `scope`
@@ -101,7 +102,16 @@ export async function withSession<TRole extends string = string, T = unknown>(
         throw new RoleNotHeldError(auth.roleName);
       }
       activeRole = auth.roleName;
+    } else if (row.roles.length === 1) {
+      // A single role is unambiguous — it's the active role whether or not it
+      // is flagged default. `roles` is distinct by name (resolve_session), so
+      // the same role held across several tenants still counts as one: an admin
+      // who only holds `security`, in any number of tenants, gets it
+      // auto-selected without having to request it.
+      activeRole = row.roles[0] as TRole;
     } else {
+      // Two or more distinct roles (e.g. different roles in different tenants):
+      // genuinely ambiguous, so fall back to the default role, else none.
       activeRole = (row.defaultRole as TRole | null) ?? null;
     }
 

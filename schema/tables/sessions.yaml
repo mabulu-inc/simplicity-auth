@@ -4,7 +4,7 @@ table: sessions
 # sets deleted_at to "forget" a session/device. resolve_session and
 # validateSession honor both; the library ships no delete setter (it's a
 # plain column write the app owns).
-mixins: [soft_delete]
+mixins: [soft_delete, auth_grants]
 columns:
   - name: session_id
     type: text

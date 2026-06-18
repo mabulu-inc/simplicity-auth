@@ -1,0 +1,36 @@
+name: auth_has_role
+language: plpgsql
+volatility: stable
+security: definer
+# True when the current request actor holds `role_name` with authority over
+# `target_tenant_id`. A wildcard assignment (user_roles.tenant_id IS NULL)
+# reaches every tenant, so it always qualifies. Passing a NULL target means
+# "global authority over this role" — only a wildcard assignment satisfies it
+# (a tenant-scoped assignment yields NULL, which is not true), so granting or
+# acting on an all-tenants resource requires holding the role globally.
+#
+# SECURITY DEFINER so it reads user_roles/roles unfiltered — RLS policies call
+# it without tripping the policies on those very tables (no recursion).
+returns: boolean
+args:
+  - name: role_name
+    type: text
+  - name: target_tenant_id
+    type: bigint
+body: |
+  BEGIN
+    RETURN current_user_id() IS NOT NULL AND EXISTS (
+      SELECT 1
+      FROM user_roles ur
+      JOIN roles r ON r.role_id = ur.role_id AND r.deleted_at IS NULL
+      WHERE ur.user_id = current_user_id()
+        AND ur.deleted_at IS NULL
+        AND r.name = role_name
+        AND (ur.tenant_id IS NULL OR ur.tenant_id = target_tenant_id)
+    );
+  END;
+comment: >
+  True if the current actor holds role_name over target_tenant_id (a wildcard
+  user_role reaches any tenant; a NULL target requires a wildcard, i.e. global,
+  assignment). SECURITY DEFINER so RLS policies can call it without recursing on
+  user_roles/roles.
