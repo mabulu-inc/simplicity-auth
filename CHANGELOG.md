@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Migrating this schema now requires `@smplcty/schema-flow >= 0.14.0`.** The
+  `resolve_session` function returns a `TABLE(… expires_at timestamptz …)`, and
+  before `0.14.0` schema-flow compared that alias against Postgres's canonical
+  `timestamp with time zone` and reported a phantom difference on every
+  `plan`/`run`/`drift` — the function never converged to zero operations.
+  `0.14.0` canonicalises function return, `TABLE(...)`, and argument types
+  before comparing, so the auth schema now settles clean. Upgrading an existing
+  database may need a one-time `--allow-destructive` run: `0.14.0` applies a
+  changed function return type with `DROP … CASCADE` + a convergence pass that
+  recreates the dependent RLS policies, and replaces any plain `UNIQUE`
+  constraint that shares a name with one of auth's partial-unique indexes with
+  the correct partial index.
+
 ## [6.0.0] - 2026-06-19
 
 ### Changed

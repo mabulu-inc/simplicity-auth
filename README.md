@@ -499,7 +499,9 @@ The library ships its schema as schema-flow YAML inside the package at `@smplcty
 
 ### Consuming with [`@smplcty/schema-flow`](https://www.npmjs.com/package/@smplcty/schema-flow)
 
-Requires **`@smplcty/schema-flow >= 0.13.0`** — the shipped seeds assign no primary keys (the app-init user and the standard roles are matched by their natural keys, `name`/`kind`) and rely on insert-only seeding, where an existing row is never overwritten. `0.13.0` makes insert-only the default (the old per-table `seeds_on_conflict` knob is gone); on older versions these seeds would upsert and clobber any consumer edits to the standard roles on every migration.
+Requires **`@smplcty/schema-flow >= 0.14.0`** — the shipped seeds assign no primary keys (the app-init user and the standard roles are matched by their natural keys, `name`/`kind`) and rely on insert-only seeding, where an existing row is never overwritten. `0.13.0` makes insert-only the default (the old per-table `seeds_on_conflict` knob is gone); on older versions these seeds would upsert and clobber any consumer edits to the standard roles on every migration. `0.14.0` is required so `resolve_session` converges: it canonicalises function type aliases (`resolve_session` returns a `TABLE(… expires_at timestamptz …)`), so the function no longer reports phantom drift on every `plan`/`run`/`drift`.
+
+If you are upgrading an existing database, run schema-flow with `--allow-destructive` once: `0.14.0` recreates a function whose return type changed via `DROP … CASCADE` + a post-apply convergence pass that restores the dependent RLS policies, and (where a live DB carries a plain `UNIQUE` constraint sharing a name with one of auth's partial-unique indexes) drops the constraint and builds the partial index. Both paths are gated behind the flag; without it the change is reported as blocked rather than silently no-applied.
 
 Import auth's schema and `@smplcty/schema-std` from your schema-flow config. See the reference [`schema-flow.config.yaml`](schema-flow.config.yaml):
 
