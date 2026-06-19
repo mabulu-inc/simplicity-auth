@@ -78,7 +78,11 @@ export interface MethodRouterOptions {
 export interface SignInOptions {
   readonly tenantId: number;
   /** The tenant's org-bound IdPs. Zero ⇒ OTP only; one ⇒ straight redirect;
-   *  several ⇒ a chooser. Drive OIDC with `@smplcty/auth/oidc`. */
+   *  several ⇒ a chooser. **May mix `integrationType`s** — the consumer must
+   *  branch on `integrationType` and only render a start route for protocols it
+   *  can drive (today only `'oidc'` has a shipped handler: `@smplcty/auth/oidc`).
+   *  This list is discovery ("here are your IdPs"), not a guarantee every row is
+   *  startable. */
   readonly authDomains: readonly AuthDomain[];
   /** Whether to offer OTP: the tenant's `allow_otp` AND an `otpHandler` is set. */
   readonly otpAllowed: boolean;

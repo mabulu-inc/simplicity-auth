@@ -76,6 +76,14 @@ type ValidatedClaims = NonNullable<ReturnType<typeof oauth.getValidatedIdTokenCl
  *
  * `oauth4webapi` is an **optional peer**; install it to use this subpath.
  *
+ * **Trust boundary.** `complete()` resolves the user by the verified
+ * `id_token` email **globally** — it does not constrain the match to
+ * `authDomain.tenantId`. An `auth_domains` IdP is therefore trusted to assert
+ * only identities it is authoritative for; partition tenants by verified email
+ * domain so one tenant's IdP cannot attest another tenant's user's address. The
+ * minted session is still the matched user's own (their roles, their tenants) —
+ * this is an authentication-authority boundary, not a scope boundary.
+ *
  * ```ts
  * const oidc = oidcHandler({ clientSecret: (ad) => secrets.get(ad.tenantId) });
  * const { redirectUrl, loginState } = await oidc.initiate(authDomain);
