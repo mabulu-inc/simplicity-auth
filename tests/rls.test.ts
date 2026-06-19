@@ -2,13 +2,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import pg from 'pg';
 import { startTestDb, type TestDb } from './helpers/test-db.js';
 
-// Role-aware, tenant-scoped RLS on the auth tables, exercised AS app_user.
-// We impersonate different actors by setting app.actor_id inside an app_user
+// Role-aware, tenant-scoped RLS on the auth tables, exercised AS app_rls.
+// We impersonate different actors by setting app.actor_id inside an app_rls
 // transaction (always rolled back, so write-authority probes don't persist),
 // which is exactly what the policies key on via current_user_id().
 
 let db: TestDb;
-let appUser: pg.Pool;
+let appRls: pg.Pool;
 
 // Personas created in setup (beyond the fixtures' Alice = 'user' on acme,
 // GlobalAdmin = 'settings' wildcard).
@@ -47,10 +47,10 @@ async function makeUser(name: string, email: string, roleId: number, tenantId: n
   }
 }
 
-// Run fn as app_user impersonating `actorId`, in a transaction that is always
+// Run fn as app_rls impersonating `actorId`, in a transaction that is always
 // rolled back so authority probes leave no trace.
 async function asUser<T>(actorId: number, fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
-  const c = await appUser.connect();
+  const c = await appRls.connect();
   try {
     await c.query('BEGIN');
     await c.query(`SELECT set_config('app.actor_id', $1, true)`, [String(actorId)]);
@@ -71,14 +71,14 @@ const provision = (over: Record<string, unknown>) =>
 
 beforeAll(async () => {
   db = await startTestDb();
-  appUser = new pg.Pool({ connectionString: db.appUserConnectionString, max: 4 });
+  appRls = new pg.Pool({ connectionString: db.appRlsConnectionString, max: 4 });
   secAcme = await makeUser('SecAcme', 'secacme@acme.com', db.ids.roles.security, db.ids.tenants.acme);
   setAcme = await makeUser('SetAcme', 'setacme@acme.com', db.ids.roles.settings, db.ids.tenants.acme);
   secGlobal = await makeUser('SecGlobal', 'secglobal@system.com', db.ids.roles.security, null);
 });
 
 afterAll(async () => {
-  await appUser.end();
+  await appRls.end();
   await db.shutdown();
 });
 
@@ -146,9 +146,12 @@ describe('user provisioning (auth_create_user)', () => {
   });
 
   it('blocks a raw INSERT on users (creation must go through auth_create_user)', async () => {
+    // Denied at the grant layer now (app_rls holds no INSERT on users) — even
+    // before RLS is consulted. Defense in depth: the RLS policy is the second
+    // gate, the missing grant is the first.
     await expect(
       asUser(secAcme, (c) => c.query(`INSERT INTO users (name, kind) VALUES ('raw', 'human')`)),
-    ).rejects.toThrow(/row-level security/i);
+    ).rejects.toThrow(/permission denied|row-level security/i);
   });
 });
 

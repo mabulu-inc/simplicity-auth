@@ -14,18 +14,16 @@ and writes only its own domain.
 
 ```
 @smplcty/auth/schema/
-├── tables/                           # all grant CRUD to app_user (auth_grants mixin)
-│   ├── users.yaml                    # + audit, RLS; seeds the app-init service user
-│   ├── tenants.yaml                  # + audit, RLS; slug (sub-domain), allow_otp (SSO-only switch)
-│   ├── roles.yaml                    # + audit; seeds 'user' (default), 'settings', 'security' — public
-│   ├── user_roles.yaml               # + audit, RLS; tenant_id NULL = wildcard / all tenants
-│   ├── communication_channels.yaml   # public
-│   ├── user_communication_methods.yaml  # + audit, RLS
-│   ├── auth_domains.yaml             # + audit, RLS; tenant's IdP(s), 1:N, resolved by id (display_name = button)
-│   ├── sessions.yaml                 # PK = token hash; last_seen_at; geo — bypass-only
-│   └── dev_otp_enrollments.yaml      # bypass-only
-├── mixins/
-│   └── auth_grants.yaml              # CRUD → app_user on every table
+├── tables/                           # grants are per-table and tiered (see Grants)
+│   ├── users.yaml                    # + audit, RLS; app_rls SELECT/UPDATE, app_privileged INSERT; seeds app-init
+│   ├── tenants.yaml                  # + audit, RLS; app_rls SELECT/INSERT/UPDATE; slug, allow_otp
+│   ├── roles.yaml                    # + audit; app_rls SELECT (reference); seeds user/settings/security
+│   ├── user_roles.yaml               # + audit, RLS; app_rls SELECT/INSERT/UPDATE; tenant_id NULL = all tenants
+│   ├── communication_channels.yaml   # + audit; app_rls SELECT (reference)
+│   ├── user_communication_methods.yaml  # + audit, RLS; app_rls SELECT/INSERT/UPDATE
+│   ├── auth_domains.yaml             # + audit, RLS; app_rls SELECT/INSERT/UPDATE; tenant's IdP(s)
+│   ├── sessions.yaml                 # credential — app_privileged only; PK = token hash
+│   └── dev_otp_enrollments.yaml      # credential (TOTP secrets) — app_privileged only
 ├── functions/
 │   ├── resolve_session.yaml          # pure resolver (SECURITY DEFINER)
 │   ├── current_user_id.yaml          # reads app.actor_id
@@ -57,16 +55,27 @@ no pinned id) before the NOT NULL tighten phase.
 
 ## Grants
 
-Every auth table grants `SELECT, INSERT, UPDATE, DELETE` to an **`app_user`**
-role (the `auth_grants` mixin), with sequence `USAGE` auto-derived — so you never
-hand-write a grant-only extend per table, and a new table can't ship without its
-grants. The library **grants to** `app_user` but does **not declare the role**:
-the consuming app (or its infra) owns role creation and credentials, so the
-grants land on whatever `app_user` the deployment already provisions and never
-collide with that declaration. On a database where the role doesn't exist yet the
-`GRANT` fails fast — provision the role first. A consumer whose login role is
-named differently creates `app_user` and grants it to that role
-(`GRANT app_user TO <role>`).
+The library owns the grants on its tables — declared **explicitly per table**,
+not via a blanket mixin, because the tables differ in sensitivity. They target
+**two roles** the deployment provides (the library grants to them but does not
+declare them):
+
+- **`app_rls`** — the per-request, RLS-bound role. `SELECT` on reference data
+  (`roles`, `communication_channels`); `SELECT/INSERT/UPDATE` on the RLS-gated
+  identity tables (`tenants`, `user_roles`, `user_communication_methods`,
+  `auth_domains`); `SELECT/UPDATE` on `users`. It gets **no** access to the
+  credential tables and **cannot** raw-INSERT a user or write reference data.
+- **`app_privileged`** — the trusted, `BYPASSRLS` auth machinery, a **member of
+  `app_rls`** (so it inherits the above). The library grants it the privileged
+  delta directly: `SELECT/INSERT/UPDATE` on `sessions` and `dev_otp_enrollments`,
+  and `INSERT` on `users` (OIDC auto-provisioning). Role membership is one-way,
+  so none of this is inherited back by `app_rls`.
+
+No `DELETE` anywhere — every table is soft-delete, so removal is an `UPDATE` to
+`deleted_at`. Sequence `USAGE` is auto-derived from the `INSERT` grants. The
+library does **not** declare the roles: the consuming app (or its infra) owns
+role creation, credentials, and the `app_privileged` → `app_rls` membership; on a
+database where a role is absent the `GRANT` fails fast.
 
 ## Row-level security
 

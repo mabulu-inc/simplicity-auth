@@ -24,14 +24,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The library now ships RLS so a consuming app gets correct multi-tenant
   isolation out of the box — keyed entirely on its own `user_roles` and the
   standard `user` / `settings` / `security` roles, with no app-specific columns,
-  so it never reaches into the business domain. `app_user` sees `tenants` it
-  belongs to; a `settings` admin maintains `auth_domains` for tenants they
-  administer and (with global access) creates tenants; a `security` admin manages
-  the `users`, `user_roles`, and `user_communication_methods` of the tenants they
-  administer, while a plain user sees only its own identity rows. `roles` and
-  `communication_channels` stay public; `sessions` and `dev_otp_enrollments` are
-  reached only through the bypass pool. The admin/bypass pool and the
-  `SECURITY DEFINER resolve_session` are unaffected.
+  so it never reaches into the business domain. The request role (`app_rls`) sees
+  `tenants` it belongs to; a `settings` admin maintains `auth_domains` for tenants
+  they administer and (with global access) creates tenants; a `security` admin
+  manages the `users`, `user_roles`, and `user_communication_methods` of the
+  tenants they administer, while a plain user sees only its own identity rows.
+  `roles` and `communication_channels` stay public; `sessions` and
+  `dev_otp_enrollments` are reached only through the privileged pool. The
+  `app_privileged` pool and the `SECURITY DEFINER resolve_session` are unaffected.
 
 - **(schema): `auth_create_user(jsonb)` — authority-checked, atomic user
   provisioning.** Creating a user, its communication methods, and its role
@@ -43,21 +43,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the app's path to provision a user; OIDC auto-provisioning still runs through
   the bypass pool.
 
-- **(schema): the library now ships the grants on its own tables.** Every auth
-  table grants `SELECT, INSERT, UPDATE, DELETE` to an `app_user` role, so a
-  consuming app no longer hand-writes a grant-only extend per table and can't
-  miss one — the failure mode that silently broke OTP sign-in when
-  `dev_otp_enrollments` was overlooked (the pre-send enrollment read ran through
-  the app pool and hit `permission denied`, while `/sign-in` still returned 200).
-  The library grants to `app_user` but deliberately does **not** declare the
-  role — the consuming app (or its infra) owns role creation and credentials —
-  so the grants land on whatever `app_user` the deployment already provisions
-  and never collide with that declaration. On a database where the role does not
-  yet exist the migration's `GRANT` fails fast, which is the correct signal to
-  provision it first. A consumer whose login role is named differently creates
-  `app_user` and grants it to that role (`GRANT app_user TO <role>`). Sequence
-  `USAGE` for the serial primary keys is granted automatically, so inserts work
-  without extra configuration.
+- **(schema): the library now owns the grants on its own tables — tiered by
+  trust.** Grants are declared explicitly per table (no blanket mixin) and target
+  two roles the deployment provides: **`app_rls`**, the per-request, RLS-bound
+  role, and **`app_privileged`**, the trusted `BYPASSRLS` auth machinery (a member
+  of `app_rls`). `app_rls` gets only what a request needs — `SELECT` on reference
+  data, `SELECT/INSERT/UPDATE` on the RLS-gated identity tables, `SELECT/UPDATE`
+  on `users` — and **no** access to the credential tables (`sessions`,
+  `dev_otp_enrollments`), no raw `users` INSERT, and no writes to reference data.
+  `app_privileged` gets the privileged delta directly (credential CRUD + `users`
+  INSERT for OIDC provisioning), which role membership does **not** leak back to
+  `app_rls`. This both eliminates the per-app grant-only extends — the missing
+  `dev_otp_enrollments` grant that silently broke OTP sign-in (the pre-send read
+  hit `permission denied` while `/sign-in` still returned 200) belongs on the
+  `app_privileged` machinery, not the request role — and closes the request role's
+  direct access to credentials, secrets, reference data, and unauthorized
+  provisioning. No `DELETE` (soft-delete everywhere); sequence `USAGE` is
+  auto-derived from the `INSERT` grants. The library grants to the roles but does
+  **not** declare them — the consuming app/infra owns role creation, credentials,
+  and the `app_privileged` → `app_rls` membership; a `GRANT` against an absent
+  role fails fast.
 
 ### Fixed
 

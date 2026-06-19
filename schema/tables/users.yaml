@@ -4,7 +4,16 @@ table: users
 # to users — a self-reference). The audit triggers stamp created_by/updated_by
 # from app.actor_id, so seeding any user requires an actor: see the app-init
 # seed below + the perTxSqlPath note in schema-flow.config.yaml.
-mixins: [audit, soft_delete, auth_grants]
+mixins: [audit, soft_delete]
+# Grants. app_rls (the RLS-bound request role) reads users and updates them
+# under RLS; it cannot INSERT — creation is via auth_create_user (DEFINER), or
+# OIDC auto-provisioning on the privileged role. app_privileged (the trusted,
+# BYPASSRLS auth machinery, a member of app_rls) gets only the INSERT delta.
+grants:
+  - to: app_rls
+    privileges: [SELECT, UPDATE]
+  - to: app_privileged
+    privileges: [INSERT]
 columns:
   - name: user_id
     type: bigserial
@@ -48,15 +57,15 @@ seeds:
 # RLS. A user row is visible to the user themselves, to whoever created it (so a
 # security admin can read back a user they just provisioned, before its roles
 # land), and to a security admin sharing one of the user's tenants. There is
-# deliberately NO INSERT policy: app_user cannot raw-INSERT a user — provisioning
-# goes through auth_create_user (atomic + authority-checked), or the bypass pool
-# for OIDC auto-provisioning. The migration/admin pool owns the table and
-# bypasses all of this.
+# deliberately NO INSERT policy: app_rls cannot raw-INSERT a user — provisioning
+# goes through auth_create_user (atomic + authority-checked), or the privileged
+# role for OIDC auto-provisioning (which is why app_privileged, not app_rls,
+# holds the users INSERT grant). The owner/privileged pool bypasses all of this.
 rls: true
 policies:
   - name: users_select
     for: SELECT
-    to: app_user
+    to: app_rls
     permissive: true
     using: |-
       users.user_id = current_user_id()
@@ -64,18 +73,11 @@ policies:
       OR auth_can_admin_user(users.user_id)
   - name: users_update
     for: UPDATE
-    to: app_user
+    to: app_rls
     permissive: true
     using: |-
       users.created_by = current_user_id()
       OR auth_can_admin_user(users.user_id)
     check: |-
-      users.created_by = current_user_id()
-      OR auth_can_admin_user(users.user_id)
-  - name: users_delete
-    for: DELETE
-    to: app_user
-    permissive: true
-    using: |-
       users.created_by = current_user_id()
       OR auth_can_admin_user(users.user_id)

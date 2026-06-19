@@ -1,7 +1,7 @@
 name: auth_create_user
 language: plpgsql
 security: definer
-# The authority-checked, atomic way for an app_user (a security admin) to
+# The authority-checked, atomic way for an app_rls request (a security admin) to
 # provision a human user. Raw INSERT on `users` is closed under RLS — a user
 # must never exist without the roles and contact methods that make it usable,
 # and the grant of access must be authorized — so creation funnels through here.
@@ -77,6 +77,6 @@ body: |
   END;
 comment: >
   Authority-checked, atomic human-user provisioning (user + communication
-  methods + role assignments). The only app_user path to create a user, since
+  methods + role assignments). The only app_rls path to create a user, since
   RLS closes raw INSERT on users. Requires the caller to hold security over
   every granted tenant (global security for an all-tenants grant).

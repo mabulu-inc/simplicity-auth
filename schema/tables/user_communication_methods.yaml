@@ -1,5 +1,9 @@
 table: user_communication_methods
-mixins: [audit, soft_delete, auth_grants]
+mixins: [audit, soft_delete]
+# Grants. RLS-gated writes by the request role.
+grants:
+  - to: app_rls
+    privileges: [SELECT, INSERT, UPDATE]
 columns:
   - name: user_communication_method_id
     type: bigserial
@@ -33,7 +37,7 @@ rls: true
 policies:
   - name: user_communication_methods_access
     for: ALL
-    to: app_user
+    to: app_rls
     permissive: true
     using: |-
       user_communication_methods.user_id = current_user_id()

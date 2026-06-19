@@ -1,5 +1,9 @@
 table: communication_channels
-mixins: [audit, soft_delete, auth_grants]
+mixins: [audit, soft_delete]
+# Grants. Reference data: read-only for the request role (seeded by the owner).
+grants:
+  - to: app_rls
+    privileges: [SELECT]
 columns:
   - name: communication_channel_id
     type: bigserial

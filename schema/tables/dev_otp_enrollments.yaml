@@ -1,5 +1,11 @@
 table: dev_otp_enrollments
-mixins: [soft_delete, auth_grants]
+mixins: [soft_delete]
+# Grants. TOTP secrets: never reachable by the RLS request role (app_rls). Only
+# the trusted auth machinery (app_privileged) reads/writes them, during pre-auth
+# sign-in.
+grants:
+  - to: app_privileged
+    privileges: [SELECT, INSERT, UPDATE]
 columns:
   # The user_communication_method this enrollment is for. There can only
   # be one dev OTP enrollment per communication method (PK + FK).

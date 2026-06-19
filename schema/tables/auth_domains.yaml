@@ -13,7 +13,11 @@ table: auth_domains
 # Absorbed from @smplcty/oidc by the own-domain rule: auth_domains is
 # auth's data model, so auth ships it. Rows are configured at runtime
 # (admin UI) and resolved by auth_domain_id — there is no stable text key.
-mixins: [audit, soft_delete, auth_grants]
+mixins: [audit, soft_delete]
+# Grants. RLS-gated writes by the request role (a settings admin).
+grants:
+  - to: app_rls
+    privileges: [SELECT, INSERT, UPDATE]
 columns:
   - name: auth_domain_id
     type: bigserial
@@ -49,7 +53,7 @@ rls: true
 policies:
   - name: auth_domains_settings
     for: ALL
-    to: app_user
+    to: app_rls
     permissive: true
     using: auth_has_role('settings', auth_domains.tenant_id)
     check: auth_has_role('settings', auth_domains.tenant_id)

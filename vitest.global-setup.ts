@@ -21,10 +21,14 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testconta
 const REPO_ROOT = import.meta.dirname;
 const FIXTURE = path.join(REPO_ROOT, 'tests/fixtures/seed-test-data.sql');
 const TEMPLATE_DB = 'auth_template';
-// The non-superuser role the library grants its tables to. Tests connect as it
-// to verify the grants; the password is throwaway (ephemeral test container).
-const APP_USER = 'app_user';
-const APP_USER_PASSWORD = 'app_user_test';
+// The two non-superuser roles the library grants its tables to. Tests connect
+// as each to verify the grant matrix; passwords are throwaway (ephemeral
+// container). app_rls is the RLS-bound request role; app_privileged is the
+// trusted, BYPASSRLS auth-machinery role and a member of app_rls.
+const APP_RLS = 'app_rls';
+const APP_RLS_PASSWORD = 'app_rls_test';
+const APP_PRIVILEGED = 'app_privileged';
+const APP_PRIVILEGED_PASSWORD = 'app_privileged_test';
 
 let container: StartedPostgreSqlContainer | undefined;
 
@@ -44,18 +48,22 @@ export default async function setup(): Promise<() => Promise<void>> {
   const adminUri = container.getConnectionUri();
   const templateUri = withDatabase(adminUri, TEMPLATE_DB);
 
-  // 1. Create the template database and the app_user role. The library grants
-  //    its tables to app_user but does NOT declare the role — a consuming app
-  //    (or its infra) owns role creation and credentials — so the harness
-  //    provisions it here, before the migration runs the GRANTs. It gets a
-  //    login + throwaway password so tests can connect AS app_user and prove
-  //    the grants actually work (the regular admin pool is a superuser holding
-  //    every privilege, which is how a missing grant once reached prod). Roles
-  //    are cluster-global, so this covers every clone.
+  // 1. Create the template database and the two roles the library grants to.
+  //    The library grants but does NOT declare the roles — a consuming app (or
+  //    its infra) owns role creation and credentials — so the harness provisions
+  //    them here, before the migration runs the GRANTs, with logins + throwaway
+  //    passwords so tests can connect AS each and prove the grant matrix (the
+  //    regular admin pool is a superuser holding every privilege, which is how a
+  //    missing grant once reached prod). app_privileged is BYPASSRLS and a member
+  //    of app_rls, the contract the library's grants assume. Roles are
+  //    cluster-global, so this covers every clone.
   const admin = new pg.Pool({ connectionString: adminUri, max: 1 });
   try {
     await admin.query(`CREATE DATABASE ${TEMPLATE_DB}`);
-    await admin.query(`CREATE ROLE ${APP_USER} LOGIN PASSWORD '${APP_USER_PASSWORD}'`);
+    await admin.query(`CREATE ROLE ${APP_RLS} LOGIN PASSWORD '${APP_RLS_PASSWORD}'`);
+    await admin.query(
+      `CREATE ROLE ${APP_PRIVILEGED} LOGIN PASSWORD '${APP_PRIVILEGED_PASSWORD}' BYPASSRLS IN ROLE ${APP_RLS}`,
+    );
   } finally {
     await admin.end();
   }
@@ -90,8 +98,10 @@ export default async function setup(): Promise<() => Promise<void>> {
 
   process.env.AUTH_TEST_ADMIN_URL = adminUri;
   process.env.AUTH_TEST_TEMPLATE_DB = TEMPLATE_DB;
-  process.env.AUTH_TEST_APP_USER = APP_USER;
-  process.env.AUTH_TEST_APP_USER_PASSWORD = APP_USER_PASSWORD;
+  process.env.AUTH_TEST_APP_RLS = APP_RLS;
+  process.env.AUTH_TEST_APP_RLS_PASSWORD = APP_RLS_PASSWORD;
+  process.env.AUTH_TEST_APP_PRIVILEGED = APP_PRIVILEGED;
+  process.env.AUTH_TEST_APP_PRIVILEGED_PASSWORD = APP_PRIVILEGED_PASSWORD;
 
   return async () => {
     await container?.stop();

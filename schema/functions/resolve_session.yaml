@@ -61,7 +61,7 @@ body: |
   END;
 comment: >
   SECURITY DEFINER pure resolver for sessions — bypasses RLS on auth
-  tables so app_user can read session → user → roles without GUCs set
+  tables so app_rls can read session → user → roles without GUCs set
   first. Returns aggregate role/privilege info only (no raw PII); does
   no validation (expiry, revocation, and role selection live in
   withSession).

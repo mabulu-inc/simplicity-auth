@@ -76,10 +76,10 @@ compose with your own predicates:
 
 ```yaml
 policies:
-  - { name: read, for: SELECT, to: app_user, using: 'auth_in_tenant(widgets.tenant_id)' }
+  - { name: read, for: SELECT, to: app_rls, using: 'auth_in_tenant(widgets.tenant_id)' }
   - name: manage
     for: ALL
-    to: app_user
+    to: app_rls
     using: "auth_has_role('settings', widgets.tenant_id)"
     check: "auth_has_role('settings', widgets.tenant_id)"
 ```

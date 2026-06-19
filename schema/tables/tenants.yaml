@@ -1,5 +1,9 @@
 table: tenants
-mixins: [audit, soft_delete, auth_grants]
+mixins: [audit, soft_delete]
+# Grants. RLS-gated writes by the request role.
+grants:
+  - to: app_rls
+    privileges: [SELECT, INSERT, UPDATE]
 columns:
   - name: tenant_id
     type: bigserial
@@ -33,29 +37,25 @@ indexes:
     where: 'deleted_at IS NULL'
     name: tenants_slug_key
 # RLS. A tenant is visible to anyone with access to it (any role). Maintaining a
-# tenant requires holding `settings` over it; creating or deleting a tenant is a
-# global act and requires holding `settings` globally — auth_has_role('settings',
-# NULL) only matches a wildcard assignment.
+# tenant — including archiving it via deleted_at — requires holding `settings`
+# over it; creating a tenant is a global act and requires holding `settings`
+# globally (auth_has_role('settings', NULL) only matches a wildcard assignment).
+# There is no hard-DELETE policy: tenants are soft-deleted like every auth table.
 rls: true
 policies:
   - name: tenants_select
     for: SELECT
-    to: app_user
+    to: app_rls
     permissive: true
     using: auth_in_tenant(tenants.tenant_id)
   - name: tenants_insert
     for: INSERT
-    to: app_user
+    to: app_rls
     permissive: true
     check: auth_has_role('settings', NULL::bigint)
   - name: tenants_update
     for: UPDATE
-    to: app_user
+    to: app_rls
     permissive: true
     using: auth_has_role('settings', tenants.tenant_id)
     check: auth_has_role('settings', tenants.tenant_id)
-  - name: tenants_delete
-    for: DELETE
-    to: app_user
-    permissive: true
-    using: auth_has_role('settings', NULL::bigint)

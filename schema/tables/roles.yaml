@@ -1,5 +1,10 @@
 table: roles
-mixins: [audit, soft_delete, auth_grants]
+mixins: [audit, soft_delete]
+# Grants. Reference data: the request role reads it; only the migration owner
+# writes it (seeded). No INSERT/UPDATE for app_rls.
+grants:
+  - to: app_rls
+    privileges: [SELECT]
 columns:
   - name: role_id
     type: bigserial

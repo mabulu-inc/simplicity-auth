@@ -1,5 +1,9 @@
 table: user_roles
-mixins: [audit, soft_delete, auth_grants]
+mixins: [audit, soft_delete]
+# Grants. RLS-gated writes by the request role (a security admin assigns roles).
+grants:
+  - to: app_rls
+    privileges: [SELECT, INSERT, UPDATE]
 columns:
   - name: user_role_id
     type: bigserial
@@ -34,24 +38,19 @@ rls: true
 policies:
   - name: user_roles_select
     for: SELECT
-    to: app_user
+    to: app_rls
     permissive: true
     using: |-
       user_roles.user_id = current_user_id()
       OR auth_has_role('security', user_roles.tenant_id)
   - name: user_roles_insert
     for: INSERT
-    to: app_user
+    to: app_rls
     permissive: true
     check: auth_has_role('security', user_roles.tenant_id)
   - name: user_roles_update
     for: UPDATE
-    to: app_user
+    to: app_rls
     permissive: true
     using: auth_has_role('security', user_roles.tenant_id)
     check: auth_has_role('security', user_roles.tenant_id)
-  - name: user_roles_delete
-    for: DELETE
-    to: app_user
-    permissive: true
-    using: auth_has_role('security', user_roles.tenant_id)

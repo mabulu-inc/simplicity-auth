@@ -111,10 +111,10 @@ Treat these three names as a **stable contract**: policies may depend on them. S
 
 ```yaml
 policies:
-  - { name: read, for: SELECT, to: app_user, using: 'auth_in_tenant(widgets.tenant_id)' }
+  - { name: read, for: SELECT, to: app_rls, using: 'auth_in_tenant(widgets.tenant_id)' }
   - name: manage
     for: ALL
-    to: app_user
+    to: app_rls
     using: "auth_has_role('settings', widgets.tenant_id)"
     check: "auth_has_role('settings', widgets.tenant_id)"
 ```
