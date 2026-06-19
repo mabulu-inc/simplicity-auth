@@ -23,6 +23,13 @@ columns:
   - name: code
     type: text
     nullable: false
+  # Optional, consumer-defined free-text label distinguishing multiple methods
+  # of the same channel (e.g. "work" vs "home" phone). The library never
+  # interprets, requires, or populates it — it exists so consumers don't carry a
+  # ucm extend solely for this one column. NULL when unset.
+  - name: qualifier
+    type: text
+    nullable: true
 indexes:
   # Partial so a (channel, code) can be reused after the row is soft-deleted.
   - columns: [communication_channel_id, code]

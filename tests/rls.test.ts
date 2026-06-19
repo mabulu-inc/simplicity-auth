@@ -145,6 +145,48 @@ describe('user provisioning (auth_create_user)', () => {
     ).rejects.toThrow(/at least one communication/i);
   });
 
+  it('raises a friendly, catchable error (23505) naming the channel on a duplicate contact', async () => {
+    // alice@acme.com is a live communication method (seeded fixture). Re-using
+    // it must surface as SQLSTATE 23505 with a human message — not a raw
+    // constraint failure the consumer has to string-match.
+    const err = await asUser(secAcme, (c) =>
+      c.query(`SELECT auth_create_user($1::jsonb)`, [
+        provision({ communication_methods: [{ channel: 'email', code: 'alice@acme.com' }] }),
+      ]),
+    ).then(
+      () => null,
+      (e: { code?: string; message?: string }) => e,
+    );
+    expect(err?.code).toBe('23505');
+    expect(err?.message).toMatch(/already exists/i);
+    expect(err?.message).toMatch(/email/i);
+  });
+
+  it('passes an optional qualifier through to the communication method (absent → NULL)', async () => {
+    const rows = await asUser(secAcme, async (c) => {
+      const { rows } = await c.query<{ id: string }>(`SELECT auth_create_user($1::jsonb) AS id`, [
+        provision({
+          communication_methods: [
+            { channel: 'email', code: 'work@example.com', qualifier: 'work' },
+            { channel: 'phone', code: '+15555550100' },
+          ],
+        }),
+      ]);
+      return c
+        .query<{
+          code: string;
+          qualifier: string | null;
+        }>(`SELECT code, qualifier FROM user_communication_methods WHERE user_id = $1 ORDER BY code`, [
+          Number(rows[0]!.id),
+        ])
+        .then((r) => r.rows);
+    });
+    expect(rows).toEqual([
+      { code: '+15555550100', qualifier: null },
+      { code: 'work@example.com', qualifier: 'work' },
+    ]);
+  });
+
   it('blocks a raw INSERT on users (creation must go through auth_create_user)', async () => {
     // Denied at the grant layer now (app_rls holds no INSERT on users) — even
     // before RLS is consulted. Defense in depth: the RLS policy is the second

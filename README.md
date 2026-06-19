@@ -482,11 +482,11 @@ The library ships its schema as schema-flow YAML inside the package at `@smplcty
 @smplcty/auth/schema/
 ├── tables/
 │   ├── users.yaml                       # + audit; seeds the app-init service user (matched by name)
-│   ├── tenants.yaml                      # + audit; slug (sub-domain), allow_otp (SSO-only switch)
+│   ├── tenants.yaml                      # + audit; slug (sub-domain, DNS-label CHECK), allow_otp (SSO-only switch)
 │   ├── roles.yaml                        # + audit; seeds 'user' (default), 'settings', 'security'
 │   ├── user_roles.yaml                   # + audit; tenant_id NULL = wildcard / all tenants
 │   ├── communication_channels.yaml      # + audit
-│   ├── user_communication_methods.yaml  # + audit
+│   ├── user_communication_methods.yaml  # + audit; qualifier (optional consumer-defined label)
 │   ├── auth_domains.yaml                 # + audit; tenant's IdP(s), 1:N, resolved by id (display_name = button)
 │   ├── sessions.yaml                     # PK = token hash; last_seen_at; geo
 │   └── dev_otp_enrollments.yaml

@@ -9,27 +9,37 @@ security: definer
 # `user_data` shape:
 #   {
 #     "name": "Ada Lovelace",
-#     "communication_methods": [ { "channel": "email", "code": "ada@acme.com" } ],
+#     "communication_methods": [ { "channel": "email", "code": "ada@acme.com", "qualifier": "work" } ],
 #     "accesses":              [ { "tenant_id": 5, "role_id": 2 } ]
 #   }
 # At least one communication method and one access are required. `channel` is
 # resolved by name; `tenant_id`/`role_id` are ids the caller already resolved
 # (the library pins none). A NULL/absent tenant_id is an all-tenants grant.
+# `qualifier` is an optional, consumer-defined free-text label on a method
+# (absent → NULL); the library stores it verbatim and never interprets it.
 #
 # Authority: the caller must hold `security` over every tenant in `accesses`;
 # an all-tenants grant requires holding `security` globally. Any failure aborts
 # the whole call — no partially-provisioned user is left behind. SECURITY
 # DEFINER does the writes RLS would otherwise block, but current_user_id() still
 # resolves to the caller, so the checks run against the calling admin.
+#
+# Duplicate-contact contract: if any requested (channel, code) already belongs
+# to a live communication method, this raises SQLSTATE 23505 (unique_violation)
+# with a message naming the channel — a stable, catchable signal a consumer can
+# map to a 4xx ("that email/phone is already in use") without parsing constraint
+# names. 23505 is raised ONLY for this case; every other failure carries the
+# default raise_exception code (P0001).
 returns: bigint
 args:
   - name: user_data
     type: jsonb
 body: |
   DECLARE
-    v_user_id bigint;
-    v_access  jsonb;
-    v_methods int;
+    v_user_id     bigint;
+    v_access      jsonb;
+    v_methods     int;
+    v_dup_channel text;
   BEGIN
     IF current_user_id() IS NULL THEN
       RAISE EXCEPTION 'auth_create_user: no authenticated actor (app.actor_id is unset)';
@@ -55,12 +65,33 @@ body: |
       END IF;
     END LOOP;
 
+    -- Friendly duplicate-contact check. A live ucm row already holding one of
+    -- the requested (channel, code) pairs would hit the partial-unique index and
+    -- surface as a raw 23505 the consumer can't tell from any other constraint.
+    -- Detect it up front and re-raise as unique_violation with a message naming
+    -- the channel, so a consumer maps it to a 4xx without parsing constraint
+    -- names. Done before the users INSERT so a doomed call burns no sequence
+    -- value. (The unique index remains the backstop for a concurrent race.)
+    SELECT cc.name INTO v_dup_channel
+    FROM jsonb_array_elements(user_data -> 'communication_methods') AS m
+    JOIN communication_channels cc
+      ON cc.name = m ->> 'channel' AND cc.deleted_at IS NULL
+    JOIN user_communication_methods ucm
+      ON ucm.communication_channel_id = cc.communication_channel_id
+     AND ucm.code = m ->> 'code'
+     AND ucm.deleted_at IS NULL
+    LIMIT 1;
+    IF v_dup_channel IS NOT NULL THEN
+      RAISE EXCEPTION 'auth_create_user: a user with this % already exists', v_dup_channel
+        USING ERRCODE = 'unique_violation';
+    END IF;
+
     INSERT INTO users (name, kind)
     VALUES (user_data ->> 'name', 'human')
     RETURNING user_id INTO v_user_id;
 
-    INSERT INTO user_communication_methods (user_id, communication_channel_id, code)
-    SELECT v_user_id, cc.communication_channel_id, m ->> 'code'
+    INSERT INTO user_communication_methods (user_id, communication_channel_id, code, qualifier)
+    SELECT v_user_id, cc.communication_channel_id, m ->> 'code', m ->> 'qualifier'
     FROM jsonb_array_elements(user_data -> 'communication_methods') AS m
     JOIN communication_channels cc
       ON cc.name = m ->> 'channel' AND cc.deleted_at IS NULL;

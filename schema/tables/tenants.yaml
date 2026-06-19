@@ -25,6 +25,13 @@ columns:
     type: boolean
     nullable: false
     default: true
+checks:
+  # The slug IS the sub-domain (acme.app.com), so it must be a valid DNS label:
+  # lowercase alphanumerics and internal hyphens, no leading/trailing hyphen. An
+  # invalid slug is an unroutable host, so reject it at the DB rather than leave
+  # every consumer to re-declare this. NULL-safe: slug is optional.
+  - name: tenants_slug_format_check
+    expression: "slug IS NULL OR slug ~ '^[a-z0-9]([a-z0-9-]*[a-z0-9])?$'"
 indexes:
   # Partial so a tenant name can be reused after the row is soft-deleted.
   - columns: [name]

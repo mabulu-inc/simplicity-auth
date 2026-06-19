@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`user_communication_methods.qualifier`** — an optional, nullable free-text
+  label on a contact method, for distinguishing two methods of the same channel
+  (e.g. a "work" vs "home" phone). The value is consumer-defined; the library
+  never interprets, requires, or populates it. Consumers that carried a ucm
+  extend solely for this column can drop it.
+- **`auth_create_user` accepts an optional `qualifier`** on each
+  `communication_methods` entry and stores it verbatim (absent → `NULL`), so a
+  consumer that wants to set a label no longer needs a follow-up `UPDATE`.
+
+### Changed
+
+- **`auth_create_user` now raises a friendly, catchable duplicate-contact
+  error.** When a requested `(channel, code)` already belongs to a live
+  communication method, the function raises `SQLSTATE 23505`
+  (`unique_violation`) with a message naming the channel
+  (`a user with this email already exists`) instead of letting a raw constraint
+  violation escape. `23505` is raised _only_ for this case — every other failure
+  carries the default `P0001` code — so a consumer can map a duplicate contact to
+  a `4xx` ("that email/phone is already in use") without parsing constraint
+  names.
+
+### Security
+
+- **`tenants.slug` now carries a DNS-label format CHECK**
+  (`tenants_slug_format_check`). The slug _is_ the tenant sub-domain
+  (`acme.app.com`), so it must be a valid DNS label — lowercase alphanumerics
+  with internal hyphens, no leading/trailing hyphen. An invalid slug (an
+  unroutable host) is now rejected at the database instead of relying on every
+  consumer to re-declare the check. The constraint is NULL-safe, since slug is
+  optional. Existing rows with a non-conforming slug must be corrected before
+  migrating.
+
 ## [7.0.1] - 2026-06-19
 
 ### Changed
