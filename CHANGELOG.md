@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Documented two previously-implicit sign-in contracts. The `@smplcty/auth/oidc`
+  handler now spells out its trust boundary: `complete()` resolves the user by
+  the verified `id_token` email **globally**, so an `auth_domains` IdP is trusted
+  to assert only identities it is authoritative for — partition tenants by
+  verified email domain. And `signInOptions().authDomains` now documents that the
+  list **may mix `integrationType`s**; consumers must branch on `integrationType`
+  and only start protocols they can drive (today only `oidc` has a shipped
+  handler). Documentation only — no behavior change.
+
 ## [7.0.0] - 2026-06-19
 
 ### Changed
