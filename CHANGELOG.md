@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [8.1.0] - 2026-07-04
+
 ### Added
 
 - **`auth_tenant_ids()` and `auth_all_tenants()`** — set-based, planner-friendly
@@ -405,7 +407,8 @@ Baseline release. Notes for this and earlier versions are on the
 [GitHub releases page](https://github.com/mabulu-inc/simplicity-auth/releases);
 the Keep a Changelog history starts from the next release.
 
-[Unreleased]: https://github.com/mabulu-inc/simplicity-auth/compare/v8.0.0...HEAD
+[Unreleased]: https://github.com/mabulu-inc/simplicity-auth/compare/v8.1.0...HEAD
+[8.1.0]: https://github.com/mabulu-inc/simplicity-auth/compare/v8.0.0...v8.1.0
 [8.0.0]: https://github.com/mabulu-inc/simplicity-auth/compare/v7.0.1...v8.0.0
 [7.0.1]: https://github.com/mabulu-inc/simplicity-auth/compare/v7.0.0...v7.0.1
 [7.0.0]: https://github.com/mabulu-inc/simplicity-auth/compare/v6.0.0...v7.0.0
