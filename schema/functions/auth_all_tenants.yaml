@@ -1,0 +1,28 @@
+name: auth_all_tenants
+language: plpgsql
+volatility: stable
+security: definer
+# True when the current actor holds any live wildcard role — a user_roles row
+# with tenant_id IS NULL, which reaches every tenant (surfaced elsewhere as the
+# app.all_tenants GUC). The all-access companion to auth_tenant_ids: a wildcard
+# grant can't be enumerated into a finite id set, so scope tests OR this against
+# `tenant_id IN (SELECT auth_tenant_ids())`. False when there is no actor.
+#
+# Wrap the call in a subquery — `(SELECT auth_all_tenants())` — in a policy so
+# the planner evaluates it as an InitPlan ONCE per query instead of per row.
+returns: boolean
+args: []
+body: |
+  BEGIN
+    RETURN EXISTS (
+      SELECT 1
+      FROM user_roles ur
+      WHERE ur.user_id = current_user_id()
+        AND ur.deleted_at IS NULL
+        AND ur.tenant_id IS NULL
+    );
+  END;
+comment: >
+  True if the current actor holds any live wildcard (all-tenants) role. The
+  all-access companion to auth_tenant_ids. SECURITY DEFINER so RLS policies can
+  use it without recursing on user_roles.

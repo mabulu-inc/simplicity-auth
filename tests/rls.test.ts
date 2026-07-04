@@ -276,6 +276,39 @@ describe('tenants and auth_domains (settings domain)', () => {
     );
     expect(rows).toEqual(['acme']);
   });
+
+  // The tenants_select scope is the decorrelated auth_all_tenants /
+  // auth_tenant_ids form. These lock its three branches: multi-tenant
+  // membership, wildcard all-access, and (above) cross-tenant hiding.
+  it('a multi-tenant member sees exactly the tenants they hold a role in', async () => {
+    const rows = await asUser(db.ids.users.bob, (c) =>
+      c.query<{ slug: string }>(`SELECT slug FROM tenants ORDER BY slug`).then((r) => r.rows.map((x) => x.slug)),
+    );
+    expect(rows).toEqual(['acme', 'globex']); // Bob holds user on acme and globex, not initech
+  });
+
+  it('a wildcard (all-tenants) role sees every tenant', async () => {
+    const rows = await asUser(secGlobal, (c) =>
+      c.query<{ slug: string }>(`SELECT slug FROM tenants ORDER BY slug`).then((r) => r.rows.map((x) => x.slug)),
+    );
+    expect(rows).toEqual(['acme', 'globex', 'initech']);
+  });
+
+  it('resolves tenant scope once per query, not once per row', async () => {
+    // Acceptance for issue #14: the scope test must fold into a plan the
+    // planner evaluates once (InitPlan for auth_all_tenants, hashed SubPlan for
+    // the auth_tenant_ids membership set) rather than calling a SECURITY DEFINER
+    // function per scanned row.
+    const plan = await asUser(db.ids.users.bob, (c) =>
+      c
+        .query<{ 'QUERY PLAN': string }>(`EXPLAIN (VERBOSE) SELECT tenant_id FROM tenants`)
+        .then((r) => r.rows.map((x) => x['QUERY PLAN']).join('\n')),
+    );
+    expect(plan).toContain('InitPlan'); // (SELECT auth_all_tenants()) — evaluated once
+    expect(plan).toContain('SubPlan'); // tenant_id IN (SELECT auth_tenant_ids()) — materialized once
+    // The membership set is resolved inside the SubPlan, not per outer row.
+    expect(plan).toContain('auth_tenant_ids');
+  });
 });
 
 describe('admins do not require the user role', () => {

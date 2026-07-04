@@ -1,0 +1,37 @@
+name: auth_tenant_ids
+language: plpgsql
+volatility: stable
+security: definer
+# The set of tenant ids the current actor holds a live, tenant-scoped role in
+# (wildcard grants — user_roles.tenant_id IS NULL — are NOT in this set; test
+# them with auth_all_tenants()). Returns nothing when there is no actor.
+#
+# This is the set-based, planner-friendly counterpart to auth_in_tenant. Used in
+# an *uncorrelated* subquery an RLS policy resolves ONCE per query rather than
+# once per row:
+#
+#   USING (
+#     (SELECT auth_all_tenants())              -- InitPlan, evaluated once
+#     OR tenant_id IN (SELECT auth_tenant_ids())  -- hashed SubPlan, materialized once
+#   )
+#
+# Because the membership set is independent of the scanned row, the planner
+# folds it into a hashed SubPlan and probes it per row instead of re-running a
+# SECURITY DEFINER function per row (auth_in_tenant's cost on large scans). Keep
+# auth_in_tenant for scalar/one-off call sites; reach for this on hot scan paths.
+returns: SETOF bigint
+args: []
+body: |
+  BEGIN
+    RETURN QUERY
+      SELECT ur.tenant_id
+      FROM user_roles ur
+      WHERE ur.user_id = current_user_id()
+        AND ur.deleted_at IS NULL
+        AND ur.tenant_id IS NOT NULL;
+  END;
+comment: >
+  The set of tenant ids the current actor holds a live, tenant-scoped role in
+  (wildcard grants excluded — see auth_all_tenants). SECURITY DEFINER so RLS
+  policies can use it in an uncorrelated subquery — resolved once per query, not
+  per row — without recursing on user_roles.

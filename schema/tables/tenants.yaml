@@ -54,7 +54,14 @@ policies:
     for: SELECT
     to: app_rls
     permissive: true
-    using: auth_in_tenant(tenants.tenant_id)
+    # Decorrelated scope test: the actor's reachable tenants are resolved once
+    # per query (InitPlan + hashed SubPlan) rather than once per row, so this
+    # scales on large scans. Equivalent to auth_in_tenant(tenants.tenant_id) —
+    # which stays for scalar call sites — but planner-friendly. See
+    # auth_tenant_ids / auth_all_tenants.
+    using: |-
+      (SELECT auth_all_tenants())
+      OR tenants.tenant_id IN (SELECT auth_tenant_ids())
   - name: tenants_insert
     for: INSERT
     to: app_rls

@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`auth_tenant_ids()` and `auth_all_tenants()`** — set-based, planner-friendly
+  companions to `auth_in_tenant()` for tenant-scoped RLS on large tables.
+  `auth_tenant_ids()` returns the tenant ids the current actor holds a role in;
+  `auth_all_tenants()` is true when they hold a wildcard (all-tenants) role. Used
+  together in a policy —
+  `USING ((SELECT auth_all_tenants()) OR tenant_id IN (SELECT auth_tenant_ids()))`
+  — the actor's reachable scope is resolved **once per query** instead of once
+  per row, so tenant scope checks scale on big scans. `auth_in_tenant()` is
+  unchanged and remains the right choice for scalar, one-off call sites.
+
+### Changed
+
+- **The built-in `tenants` visibility policy now uses the decorrelated scope
+  form.** Behaviour is identical (a tenant is visible to any member; wildcard
+  roles see all), but the scope is resolved once per query rather than per row.
+  Consumers that apply tenant scope to large tables can adopt the same pattern
+  with the new `auth_tenant_ids()` / `auth_all_tenants()` helpers.
+
 ## [8.0.0] - 2026-06-19
 
 ### Added
