@@ -499,7 +499,7 @@ The library ships its schema as schema-flow YAML inside the package at `@smplcty
 
 ### Consuming with [`@smplcty/schema-flow`](https://www.npmjs.com/package/@smplcty/schema-flow)
 
-Requires **`@smplcty/schema-flow >= 0.14.0`** — the shipped seeds assign no primary keys (the app-init user and the standard roles are matched by their natural keys, `name`/`kind`) and rely on insert-only seeding, where an existing row is never overwritten. `0.13.0` makes insert-only the default (the old per-table `seeds_on_conflict` knob is gone); on older versions these seeds would upsert and clobber any consumer edits to the standard roles on every migration. `0.14.0` is required so `resolve_session` converges: it canonicalises function type aliases (`resolve_session` returns a `TABLE(… expires_at timestamptz …)`), so the function no longer reports phantom drift on every `plan`/`run`/`drift`.
+Requires **`@smplcty/schema-flow >= 0.18.2`** — the shipped seeds assign no primary keys (the app-init user and the standard roles are matched by their natural keys, `name`/`kind`) and rely on insert-only seeding, where an existing row is never overwritten. `0.13.0` makes insert-only the default (the old per-table `seeds_on_conflict` knob is gone); on older versions these seeds would upsert and clobber any consumer edits to the standard roles on every migration. `0.14.0` is required so `resolve_session` converges: it canonicalises function type aliases (`resolve_session` returns a `TABLE(… expires_at timestamptz …)`), so the function no longer reports phantom drift on every `plan`/`run`/`drift`. `0.18.2` is required for the `SECURITY DEFINER` search_path pins (see below): it emits the pin as a valid `SET search_path` clause and compares it against `pg_proc.proconfig` semantically (whitespace/case-normalised), so a pinned function converges to a clean no-op instead of reporting phantom drift.
 
 If you are upgrading an existing database, run schema-flow with `--allow-destructive` once: `0.14.0` recreates a function whose return type changed via `DROP … CASCADE` + a post-apply convergence pass that restores the dependent RLS policies, and (where a live DB carries a plain `UNIQUE` constraint sharing a name with one of auth's partial-unique indexes) drops the constraint and builds the partial index. Both paths are gated behind the flag; without it the change is reported as blocked rather than silently no-applied.
 
@@ -513,6 +513,14 @@ default:
 ```
 
 The `audit` mixin makes `created_by`/`updated_by` NOT NULL, stamped from `app.actor_id`. Rows seeded during migration have no request actor, so the shipped `post/` script back-fills them to the seeded `app-init` service user (resolved by name, not a fixed id) before the NOT NULL tighten phase — see the config for details.
+
+### ⚠️ Known limitation — auth must deploy into the `public` schema
+
+The library's seven `SECURITY DEFINER` functions (`auth_has_role`, `auth_can_admin_user`, `auth_in_tenant`, `auth_all_tenants`, `auth_tenant_ids`, `resolve_session`, `auth_create_user`) each ship with a **pinned `search_path` of `pg_catalog, public`**. This is a security hardening: a `SECURITY DEFINER` function otherwise inherits the _caller's_ `search_path`, so a caller who plants a shadow object (a fake `user_roles` table, a fake `current_user_id()`) in an earlier-resolving schema could make an unqualified name inside these functions resolve to _their_ object — and it would run with the definer's elevated rights, subverting an authorization check. Pinning to the trusted schema list closes that. (`current_user_id()` is `SECURITY INVOKER`, so it carries no escalation risk and is intentionally left unpinned.)
+
+The consequence: **`public` is hardcoded into the shipped pin**, so auth must be deployed into the `public` schema. Every consumer today deploys there (schema-flow's default), so this is a no-op for you in practice — but if you deploy auth into a non-`public` schema (e.g. `auth`, `app`), the pinned path won't contain auth's tables and the functions will break. schema-flow does not yet interpolate the deploy `pgSchema` into `set:` values, which is the only reason the pin can't be schema-agnostic.
+
+If you have a concrete, justifiable need to deploy auth into a non-`public` schema, open an issue — the fix is a schema-flow enhancement to interpolate the deploy schema into `set.search_path`, after which the pin drops the hardcoded `public` and portability is restored.
 
 ### Soft delete
 

@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Pinned `search_path` on all seven `SECURITY DEFINER` functions**
+  (`auth_has_role`, `auth_can_admin_user`, `auth_in_tenant`, `auth_all_tenants`,
+  `auth_tenant_ids`, `resolve_session`, `auth_create_user`) to
+  `pg_catalog, public`. These functions run with elevated (definer) rights and
+  are called from RLS policies; without a pinned path they inherited the
+  caller's `search_path`, letting a caller who plants a shadow object (a fake
+  `user_roles` table, a fake `current_user_id()`) in an earlier-resolving schema
+  redirect an unqualified name inside the function to their object and subvert an
+  authorization decision. Pinning to the trusted schema list closes that vector.
+  `current_user_id()` is `SECURITY INVOKER` and carries no escalation risk, so it
+  is intentionally left unpinned.
+
+### Changed
+
+- **Now requires `@smplcty/schema-flow >= 0.18.2`** (was `>= 0.14.0`), for
+  correct emission and drift-free convergence of the new `SECURITY DEFINER`
+  `search_path` pins.
+
+### Notes
+
+- The pin hardcodes `public`, so **auth must be deployed into the `public`
+  schema** while this holds — true for every consumer today. Deploying into a
+  non-`public` schema is a known limitation (schema-flow can't yet interpolate
+  the deploy schema into the pin); see the README's "Consuming with
+  schema-flow" section.
+
 ## [8.1.0] - 2026-07-04
 
 ### Added
