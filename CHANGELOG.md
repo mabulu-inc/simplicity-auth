@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.0.1] - 2026-10-06
+
 ### Changed
 
 - **Tenant-scoped tables can now be read in parallel under RLS.** The scope
@@ -451,7 +453,8 @@ Baseline release. Notes for this and earlier versions are on the
 [GitHub releases page](https://github.com/mabulu-inc/simplicity-auth/releases);
 the Keep a Changelog history starts from the next release.
 
-[Unreleased]: https://github.com/mabulu-inc/simplicity-auth/compare/v9.0.0...HEAD
+[Unreleased]: https://github.com/mabulu-inc/simplicity-auth/compare/v9.0.1...HEAD
+[9.0.1]: https://github.com/mabulu-inc/simplicity-auth/compare/v9.0.0...v9.0.1
 [9.0.0]: https://github.com/mabulu-inc/simplicity-auth/compare/v8.1.0...v9.0.0
 [8.1.0]: https://github.com/mabulu-inc/simplicity-auth/compare/v8.0.0...v8.1.0
 [8.0.0]: https://github.com/mabulu-inc/simplicity-auth/compare/v7.0.1...v8.0.0
