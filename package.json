@@ -105,27 +105,33 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@release-it/keep-a-changelog": "^7.1.0",
+    "@release-it/keep-a-changelog": "^8.0.1",
     "@smplcty/schema-flow": "^0.21.0",
     "@smplcty/twilio": "^0.1.1",
-    "@testcontainers/postgresql": "^12.0.2",
+    "@testcontainers/postgresql": "^12.2.0",
     "@types/node": "^22.20.5",
-    "@types/pg": "^8.20.0",
-    "eslint": "^10.5.0",
+    "@types/pg": "^8.23.1",
+    "eslint": "^10.12.0",
     "husky": "^9.1.7",
-    "jose": "^6.2.3",
-    "lint-staged": "^17.0.7",
-    "oauth4webapi": "^3.8.6",
-    "pg": "^8.21.0",
-    "prettier": "^3.8.4",
-    "release-it": "^20.2.0",
+    "jose": "^6.2.12",
+    "lint-staged": "^17.6.0",
+    "oauth4webapi": "^3.8.8",
+    "pg": "^8.23.1",
+    "prettier": "^3.9.9",
+    "release-it": "^21.1.0",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.61.0",
-    "vitest": "^4.1.8"
+    "typescript-eslint": "^8.71.1",
+    "vite": "^8.3.3",
+    "vitest": "^5.0.3"
   },
   "dependencies": {
-    "@smplcty/db": "^4.2.0",
+    "@smplcty/db": "^4.3.0",
     "@smplcty/schema-std": "^0.0.1",
-    "otplib": "^13.4.1"
+    "otplib": "^13.5.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "undici@7.29.0": "7.29.1"
+    }
   }
 }

@@ -309,9 +309,7 @@ When a user is enrolled in dev OTP, you don't need to send them an SMS at all â€
 import { findUserByCommunicationMethod, isDevOtpEnrolled } from '@smplcty/auth';
 import { createTwilioVerifyClient } from '@smplcty/twilio';
 
-const twilio = createTwilioVerifyClient({
-  /* ... */
-});
+const twilio = createTwilioVerifyClient({/* ... */});
 
 // Sign-in send handler:
 const lookup = await findUserByCommunicationMethod(db, { channel: 'phone', code: phone });
@@ -339,9 +337,7 @@ return ok();
 import { verifyDevOtp, createSession, findUserByCommunicationMethod } from '@smplcty/auth';
 import { createTwilioVerifyClient } from '@smplcty/twilio';
 
-const twilio = createTwilioVerifyClient({
-  /* ... */
-});
+const twilio = createTwilioVerifyClient({/* ... */});
 
 // Sign-in verify handler:
 const lookup = await findUserByCommunicationMethod(db, { channel: 'phone', code: phone });
