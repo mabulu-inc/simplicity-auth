@@ -8,21 +8,22 @@ on:
   release:
     types: [published]
 
-# id-token: write is required for npm trusted publishing via OIDC.
-# The runner mints a short-lived OIDC ID token, exchanges it at the
-# npm registry for a publish credential, and publishes — no long-lived
-# NPM_TOKEN secret is stored anywhere.
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: publish
   cancel-in-progress: false
 
 jobs:
+  # The full check suite (lint, format, typecheck, gitleaks, build, tests)
+  # on the tagged commit, before anything is published.
+  check:
+    uses: ./.github/workflows/ci.yml
+
   publish:
-    name: Test, build, and publish to npm
+    name: Build and publish to npm
+    needs: check
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # The "npm" GitHub Actions environment is the trust boundary on the
@@ -30,17 +31,19 @@ jobs:
     # Environments) and be referenced by name in the npm trusted
     # publisher configuration.
     environment: npm
-
-    # Postgres is provisioned per run by Testcontainers (the vitest
-    # globalSetup), using the runner's Docker daemon — no service container.
+    # id-token: write is required for npm trusted publishing via OIDC: the
+    # runner mints a short-lived OIDC ID token and exchanges it at the npm
+    # registry for a publish credential, so no NPM_TOKEN secret is stored.
+    # Scoped to this job only, so the check job never holds it.
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - name: Check out code at the release tag
         uses: actions/checkout@v6
         with:
-          # Full git history so the gitleaks step below can scan
-          # every commit, not just the release tree, and so the
-          # "tag on main" ancestry check below can walk the graph.
+          # Full history so the "tag on main" ancestry check can walk the graph.
           fetch-depth: 0
 
       # Refuse to publish unless the release tag's commit is reachable
@@ -70,23 +73,6 @@ jobs:
       - name: Install dependencies (frozen lockfile)
         run: pnpm install --frozen-lockfile
 
-      # Defense in depth: scan for leaked secrets even on release.
-      # ci.yml runs gitleaks on every PR and push to main, but a
-      # secret could in theory land via direct push, force-push, or
-      # admin override. This step ensures it never reaches the npm
-      # tarball — failing here prevents the publish.
-      - name: Install gitleaks
-        env:
-          GITLEAKS_VERSION: 8.30.1
-        run: |
-          set -euo pipefail
-          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin gitleaks
-          gitleaks version
-
-      - name: Run gitleaks (full git history)
-        run: gitleaks git . --no-banner --redact
-
       - name: Verify release tag matches package.json version
         run: |
           TAG="${GITHUB_REF##refs/tags/v}"
@@ -96,12 +82,6 @@ jobs:
             exit 1
           fi
           echo "Tag and package.json version match: $PKG"
-
-      - name: Type-check
-        run: pnpm run typecheck
-
-      - name: Run tests (Postgres via Testcontainers)
-        run: pnpm test
 
       - name: Build distribution
         run: pnpm run build

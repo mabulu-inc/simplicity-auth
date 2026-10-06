@@ -168,11 +168,11 @@ against the app's scope tables).
   library. **Tenant membership is in the contract** — it's `user_roles.tenant_id`
   (a library table), not an app-owned concept — so the library resolves "which
   users are in tenant X" itself and revokes their sessions. (A session still
-  belongs to a _user_; the library joins user→user_roles→tenant to fan out. There
+  belongs to a _user_; the library joins user→user*roles→tenant to fan out. There
   is **no** separate `user_tenants` table — `user_roles` is the membership.)
   Only users **explicitly** in the tenant are revoked: the match is
   `user_roles.tenant_id = tenantId`, **not** `tenant_id IS NULL`. Wildcard
-  members (NULL = all-tenants: global admins, service principals) are _not_ a
+  members (NULL = all-tenants: global admins, service principals) are \_not* a
   member of any one tenant, so a single tenant's sign-off must not sign them out.
 
 ## Request flow

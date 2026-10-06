@@ -6,6 +6,8 @@ on:
     branches: [main]
   push:
     branches: [main]
+  # publish.yml calls this so nothing reaches npm without passing it.
+  workflow_call:
 
 permissions:
   contents: read
@@ -14,12 +16,17 @@ permissions:
 # Each unique ref still gets its own queue, so PRs and main don't
 # interfere with each other.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # A newer push supersedes an older run; never cancel a release's gate.
+  cancel-in-progress: ${{ github.event_name != 'release' }}
 
 jobs:
   check:
-    name: Lint, type-check, gitleaks, test, build
+    # The floor in package.json `engines`, and the current LTS.
+    strategy:
+      matrix:
+        node: [22, 24]
+    name: check (node ${{ matrix.node }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -42,22 +49,11 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: ${{ matrix.node }}
           cache: pnpm
 
       - name: Install dependencies (frozen lockfile)
         run: pnpm install --frozen-lockfile
-
-      # Fast checks first, fail fast.
-
-      - name: Lint
-        # eslint config exists; if it ever doesn't, this step will fail
-        # loudly so we don't silently lose linting.
-        run: pnpm run lint
-        continue-on-error: false
-
-      - name: Type-check
-        run: pnpm run typecheck
 
       - name: Install gitleaks
         # Pinned to a specific version so the gate is reproducible.
@@ -73,11 +69,10 @@ jobs:
       - name: Run gitleaks (full git history)
         run: gitleaks git . --no-banner --redact
 
-      - name: Run tests (Postgres via Testcontainers)
-        run: pnpm test
-
-      - name: Build distribution
-        run: pnpm run build
+      # lint → format → typecheck → build → tests. Tests start PostgreSQL
+      # through Testcontainers, using the runner's Docker daemon.
+      - name: pnpm check
+        run: pnpm check
 
       # Advisory: warn (don't fail) when a direct dep has a newer
       # release on npm than what's installed. Catches "typescript-eslint
@@ -85,6 +80,7 @@ jobs:
       # last because it's the lowest-priority check — actual test or
       # build failures should surface first.
       - name: Check for outdated direct dependencies (non-blocking)
+        if: matrix.node == 24
         run: |
           set +e
           OUTPUT=$(pnpm outdated --long 2>&1)

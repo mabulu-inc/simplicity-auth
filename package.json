@@ -63,7 +63,7 @@
     "multi-tenant"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -74,6 +74,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "check": "pnpm lint && pnpm format && pnpm typecheck && pnpm build && pnpm test",
     "prepare": "husky",
     "release": "GITHUB_TOKEN=$(gh auth token) release-it",
     "release:patch": "GITHUB_TOKEN=$(gh auth token) release-it patch",
@@ -108,7 +109,7 @@
     "@smplcty/schema-flow": "^0.21.0",
     "@smplcty/twilio": "^0.1.1",
     "@testcontainers/postgresql": "^12.0.2",
-    "@types/node": "^25.9.3",
+    "@types/node": "^22.20.5",
     "@types/pg": "^8.20.0",
     "eslint": "^10.5.0",
     "husky": "^9.1.7",

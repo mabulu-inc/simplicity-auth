@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   benefit in your own policies, write the tenant set the same way:
   `tenant_id IN (SELECT auth_tenant_ids())` still works and still sees the same
   rows, but it keeps the scan from running in parallel. (#17)
+- **Node.js 22 or newer is now required.** Node.js 20 stopped receiving
+  security updates in April 2026. `@smplcty/auth` is tested on Node.js 22 and 24.
 
 ## [9.0.0] - 2026-07-04
 
