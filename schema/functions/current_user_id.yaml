@@ -1,6 +1,7 @@
 name: current_user_id
 language: sql
 volatility: stable
+parallel: restricted
 # Reads the per-request actor from the app.actor_id GUC (set by
 # withSession / withServiceContext). This is the join key for app RLS and
 # scope functions: policies that need "the current user" call this rather

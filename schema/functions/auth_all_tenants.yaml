@@ -1,6 +1,7 @@
 name: auth_all_tenants
 language: plpgsql
 volatility: stable
+parallel: restricted
 security: definer
 set:
   search_path: pg_catalog, public
@@ -8,7 +9,7 @@ set:
 # with tenant_id IS NULL, which reaches every tenant (surfaced elsewhere as the
 # app.all_tenants GUC). The all-access companion to auth_tenant_ids: a wildcard
 # grant can't be enumerated into a finite id set, so scope tests OR this against
-# `tenant_id IN (SELECT auth_tenant_ids())`. False when there is no actor.
+# `tenant_id = ANY (ARRAY(SELECT auth_tenant_ids()))`. False when there is no actor.
 #
 # Wrap the call in a subquery — `(SELECT auth_all_tenants())` — in a policy so
 # the planner evaluates it as an InitPlan ONCE per query instead of per row.

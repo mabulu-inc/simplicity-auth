@@ -295,19 +295,47 @@ describe('tenants and auth_domains (settings domain)', () => {
   });
 
   it('resolves tenant scope once per query, not once per row', async () => {
-    // Acceptance for issue #14: the scope test must fold into a plan the
-    // planner evaluates once (InitPlan for auth_all_tenants, hashed SubPlan for
-    // the auth_tenant_ids membership set) rather than calling a SECURITY DEFINER
-    // function per scanned row.
+    // Both halves of the scope must be InitPlans the planner evaluates once,
+    // never a SECURITY DEFINER call or a hashed SubPlan probed per scanned row.
     const plan = await asUser(db.ids.users.bob, (c) =>
       c
         .query<{ 'QUERY PLAN': string }>(`EXPLAIN (VERBOSE) SELECT tenant_id FROM tenants`)
         .then((r) => r.rows.map((x) => x['QUERY PLAN']).join('\n')),
     );
-    expect(plan).toContain('InitPlan'); // (SELECT auth_all_tenants()) — evaluated once
-    expect(plan).toContain('SubPlan'); // tenant_id IN (SELECT auth_tenant_ids()) — materialized once
-    // The membership set is resolved inside the SubPlan, not per outer row.
+    expect(plan.match(/InitPlan/g)).toHaveLength(2);
+    expect(plan).toContain('auth_all_tenants');
     expect(plan).toContain('auth_tenant_ids');
+    expect(plan).not.toContain('SubPlan');
+  });
+
+  it('calls no parallel-unsafe function from any policy', async () => {
+    const { rows } = await db.pool.query<{ policy: string; fn: string }>(
+      `SELECT p.tablename || '.' || p.policyname AS policy, f.proname AS fn
+         FROM pg_policies p
+         CROSS JOIN LATERAL regexp_matches(coalesce(p.qual, '') || ' ' || coalesce(p.with_check, ''), '([a-z_]+)\\(', 'g') AS m(name)
+         JOIN pg_proc f ON f.proname = m.name[1] AND f.pronamespace = 'public'::regnamespace
+        WHERE p.schemaname = 'public' AND f.proparallel = 'u'
+        ORDER BY 1, 2`,
+    );
+    expect(rows).toEqual([]);
+  });
+
+  it('lets a tenant-scoped scan run in parallel', async () => {
+    const plan = await asUser(db.ids.users.bob, async (c) => {
+      // Costs zeroed so a table this small is still worth a parallel plan.
+      for (const [name, value] of [
+        ['parallel_setup_cost', '0'],
+        ['parallel_tuple_cost', '0'],
+        ['min_parallel_table_scan_size', '0'],
+        ['max_parallel_workers_per_gather', '2'],
+      ]) {
+        await c.query(`SELECT set_config($1, $2, true)`, [name, value]);
+      }
+      const r = await c.query<{ 'QUERY PLAN': string }>(`EXPLAIN SELECT slug FROM tenants`);
+      return r.rows.map((x) => x['QUERY PLAN']).join('\n');
+    });
+    expect(plan).toMatch(/Gather/);
+    expect(plan).toMatch(/Parallel Seq Scan on tenants/);
   });
 });
 

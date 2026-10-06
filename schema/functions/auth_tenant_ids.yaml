@@ -1,6 +1,7 @@
 name: auth_tenant_ids
 language: plpgsql
 volatility: stable
+parallel: restricted
 security: definer
 set:
   search_path: pg_catalog, public
@@ -13,14 +14,18 @@ set:
 # once per row:
 #
 #   USING (
-#     (SELECT auth_all_tenants())              -- InitPlan, evaluated once
-#     OR tenant_id IN (SELECT auth_tenant_ids())  -- hashed SubPlan, materialized once
+#     (SELECT auth_all_tenants())                         -- InitPlan, evaluated once
+#     OR tenant_id = ANY (ARRAY(SELECT auth_tenant_ids()))  -- InitPlan, evaluated once
 #   )
 #
-# Because the membership set is independent of the scanned row, the planner
-# folds it into a hashed SubPlan and probes it per row instead of re-running a
-# SECURITY DEFINER function per row (auth_in_tenant's cost on large scans). Keep
-# auth_in_tenant for scalar/one-off call sites; reach for this on hot scan paths.
+# Both halves are InitPlans: the leader resolves them once and the scan only
+# compares against the result, so it keeps its index and can run in parallel.
+# `tenant_id IN (SELECT auth_tenant_ids())` reads the same but plans as a hashed
+# SubPlan, which rules out a parallel scan. Keep auth_in_tenant for
+# scalar/one-off call sites; reach for this on hot scan paths.
+#
+# PARALLEL RESTRICTED, like auth_all_tenants and current_user_id: they run only
+# in the leader, so no answer depends on a worker seeing app.actor_id.
 returns: SETOF bigint
 args: []
 body: |

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Tenant-scoped tables can now be read in parallel under RLS.** The scope
+  functions every policy calls are now `PARALLEL RESTRICTED` instead of
+  `PARALLEL UNSAFE`, and the built-in `tenants` policy resolves the actor's
+  tenants with `tenant_id = ANY (ARRAY(SELECT auth_tenant_ids()))`. Before this, a
+  scan of any table under these policies ran on a single process. On a large
+  tenant-scoped read the parallel plan took about a third of the time. To
+  benefit in your own policies, write the tenant set the same way:
+  `tenant_id IN (SELECT auth_tenant_ids())` still works and still sees the same
+  rows, but it keeps the scan from running in parallel. (#17)
+
 ## [9.0.0] - 2026-07-04
 
 ### Security

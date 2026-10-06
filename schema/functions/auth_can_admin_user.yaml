@@ -1,6 +1,7 @@
 name: auth_can_admin_user
 language: plpgsql
 volatility: stable
+parallel: restricted
 security: definer
 set:
   search_path: pg_catalog, public
