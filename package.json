@@ -68,7 +68,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "clean": "rm -rf dist",
-    "lint": "eslint src tests",
+    "lint": "oxlint src tests",
     "format": "prettier --check .",
     "format:fix": "prettier --write .",
     "typecheck": "tsc --noEmit",
@@ -83,7 +83,7 @@
   },
   "lint-staged": {
     "*.{ts,js}": [
-      "eslint --fix",
+      "oxlint --fix",
       "prettier --write"
     ],
     "*.{json,md,yaml,yml}": [
@@ -104,23 +104,21 @@
     }
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
     "@release-it/keep-a-changelog": "^8.0.1",
     "@smplcty/schema-flow": "^0.21.0",
     "@smplcty/twilio": "^0.1.1",
     "@testcontainers/postgresql": "^12.2.0",
     "@types/node": "^22.20.5",
     "@types/pg": "^8.23.1",
-    "eslint": "^10.12.0",
     "husky": "^9.1.7",
     "jose": "^6.2.12",
     "lint-staged": "^17.6.0",
     "oauth4webapi": "^3.8.8",
+    "oxlint": "^1.87.0",
     "pg": "^8.23.1",
     "prettier": "^3.9.9",
     "release-it": "^21.1.0",
-    "typescript": "^6.0.3",
-    "typescript-eslint": "^8.71.1",
+    "typescript": "^7.0.2",
     "vite": "^8.3.3",
     "vitest": "^5.0.3"
   },
