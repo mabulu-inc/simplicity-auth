@@ -25,8 +25,8 @@ importers:
         specifier: ^7.1.0
         version: 7.1.0(release-it@20.2.0(@types/node@25.9.3))
       '@smplcty/schema-flow':
-        specifier: ^0.18.2
-        version: 0.18.2
+        specifier: ^0.21.0
+        version: 0.21.0
       '@smplcty/twilio':
         specifier: ^0.1.1
         version: 0.1.1
@@ -71,7 +71,7 @@ importers:
         version: 8.61.0(eslint@10.5.0(jiti@2.7.0))(typescript@6.0.3)
       vitest:
         specifier: ^4.1.8
-        version: 4.1.8(@types/node@25.9.3)(vite@8.0.8(@types/node@25.9.3)(jiti@2.7.0)(yaml@2.9.0))
+        version: 4.1.8(@types/node@25.9.3)(vite@8.0.8(@types/node@25.9.3)(jiti@2.7.0)(yaml@2.9.1))
 
 packages:
 
@@ -524,9 +524,9 @@ packages:
     peerDependencies:
       pg: '>=8.0.0'
 
-  '@smplcty/schema-flow@0.18.2':
-    resolution: {integrity: sha512-h/numVkc9CUz9GNOnoS2fCmASFfSZRUGlvgCJFTZ1SDtw2tntDn6uYDX2fFuFmUpzVNUvh1/RqgHTYFWkPzKgA==}
-    engines: {node: '>=20'}
+  '@smplcty/schema-flow@0.21.0':
+    resolution: {integrity: sha512-4cnmuCeg300PRQl3alX5I9AEELcYprnf8Jfrxy1XRuWd5gJjxvKfbsrdiEYVlDEHqXC0cUvNd8+G02ikGrunZA==}
+    engines: {node: '>=22'}
     hasBin: true
 
   '@smplcty/schema-std@0.0.1':
@@ -1602,11 +1602,14 @@ packages:
   pg-cloudflare@1.4.0:
     resolution: {integrity: sha512-Vo7z/6rrQYxpNRylp4Tlob2elzbh+N/MOQbxFVWCxS7oEx6jF53GTJFxK2WWpKuBRkmiin4Mt+xofFDjx09R0A==}
 
+  pg-cloudflare@1.4.1:
+    resolution: {integrity: sha512-6PQbsFWZcp9EmJEwy5cGQ2La+AMWpP46lgbb8X+U/XsHIUweYDNCpeuKck5RxL2MdVFi7krbbEi5nX4Zh7JhrQ==}
+
   pg-connection-string@2.13.0:
     resolution: {integrity: sha512-EMnU9E2fSULdsbErBbMaXJvFeD9B4+nPcM3f+4lsiCR0BHLPrLVjv3DbyM2hgQQviKJaTWIRRTjKjWlHg3p2ig==}
 
-  pg-connection-string@2.14.0:
-    resolution: {integrity: sha512-XwWDGcLRGCXAR8F/AM5bG7Q+A3Wm2s6QeEjlOKZLlH3UYcguiqCWKyWXVag5TLTIjR7oOJUY8kcADaZgWPyLeg==}
+  pg-connection-string@2.14.1:
+    resolution: {integrity: sha512-qR3kGNPBLpCNtz0evbKA0Y/MRFXwSSdT+pTJvYp/bXTcReZbvX1kzF0IyTc1QnxqF7AZbOeBhNL8R5mYQZV/MA==}
 
   pg-int8@1.0.1:
     resolution: {integrity: sha512-WCtabS6t3c8SkpDBUlb1kjOs7l66xsGdKpIPZsg4wR+B3+u9UAum2odSsF9tnvxg80h4ZxLWMy4pRjOsFIqQpw==}
@@ -1620,8 +1623,8 @@ packages:
   pg-protocol@1.14.0:
     resolution: {integrity: sha512-n5taZ1kO3s9ngDTVxsEznOqCyToTgz0FLuPq0B33COy5pPpuWJpY3/2oRBVETuOgzdqRXfWpM9HIhp2LBBT1BA==}
 
-  pg-protocol@1.15.0:
-    resolution: {integrity: sha512-cq9sECI5s0+uPUXjbz8ioyPJni6RzsRib0US67i5IoTZKw8fNeYlVE7u8F4dG7vEJJtc5wdD1K189lCCUwqWTQ==}
+  pg-protocol@1.16.1:
+    resolution: {integrity: sha512-p9VOFMiHB/ZbJATetbg+99PxssTVSQRnyuPSQ67mN1+1KBOjZaZ83ZQzltnxPhJwSsC3nwVjJ10DVJlerbFzLg==}
 
   pg-types@2.2.0:
     resolution: {integrity: sha512-qTAAlrEsl8s4OiEQY69wDvcMIdQN6wdz5ojQiOy6YRMuynxenON0O5oCpJI6lshc6scgAY8qvJ2On/p+CXY0GA==}
@@ -1636,8 +1639,8 @@ packages:
       pg-native:
         optional: true
 
-  pg@8.22.0:
-    resolution: {integrity: sha512-8wih1vVIBMxoUM2oB4soJsD9tDnDpLv4OXBJ+EJzFsvycD+lfyIreC2gGHq78f8jbLLt+bvlPTFdFZfJkOuzAA==}
+  pg@8.23.1:
+    resolution: {integrity: sha512-aL96AHANtWjPLDOLqnhx+ngp9+UK7ETEU8VJrDCGvsSSi/mGLcWYsS6Herg7lmaBJe4uwrfqsa7gTEFaSizDoQ==}
     engines: {node: '>= 16.0.0'}
     peerDependencies:
       pg-native: '>=3.0.1'
@@ -2154,6 +2157,11 @@ packages:
     engines: {node: '>= 14.6'}
     hasBin: true
 
+  yaml@2.9.1:
+    resolution: {integrity: sha512-3NxN8+78OdzbT7C/WjGsyfPAtJaN3FNDsWxv7Y7mcDsT/oOmgW8BpyQQFFBnvZE3j9Y2Sdz1ULFLezL7Eb2yFw==}
+    engines: {node: '>= 14.6'}
+    hasBin: true
+
   yargs-parser@21.1.1:
     resolution: {integrity: sha512-tVpsJW7DdjecAiFpbIB1e3qxIQsE6NoPc5/eTdrbbIC4h0LVsWhnoa3g+m2HclBIujHzsxZ4VJVA+GUuc2/LBw==}
     engines: {node: '>=12'}
@@ -2583,12 +2591,11 @@ snapshots:
     dependencies:
       pg: 8.21.0
 
-  '@smplcty/schema-flow@0.18.2':
+  '@smplcty/schema-flow@0.21.0':
     dependencies:
-      chalk: 5.6.2
       glob: 13.0.6
-      pg: 8.22.0
-      yaml: 2.9.0
+      pg: 8.23.1
+      yaml: 2.9.1
     transitivePeerDependencies:
       - pg-native
 
@@ -2767,13 +2774,13 @@ snapshots:
       chai: 6.2.2
       tinyrainbow: 3.1.0
 
-  '@vitest/mocker@4.1.8(vite@8.0.8(@types/node@25.9.3)(jiti@2.7.0)(yaml@2.9.0))':
+  '@vitest/mocker@4.1.8(vite@8.0.8(@types/node@25.9.3)(jiti@2.7.0)(yaml@2.9.1))':
     dependencies:
       '@vitest/spy': 4.1.8
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 8.0.8(@types/node@25.9.3)(jiti@2.7.0)(yaml@2.9.0)
+      vite: 8.0.8(@types/node@25.9.3)(jiti@2.7.0)(yaml@2.9.1)
 
   '@vitest/pretty-format@4.1.8':
     dependencies:
@@ -3666,9 +3673,12 @@ snapshots:
   pg-cloudflare@1.4.0:
     optional: true
 
+  pg-cloudflare@1.4.1:
+    optional: true
+
   pg-connection-string@2.13.0: {}
 
-  pg-connection-string@2.14.0: {}
+  pg-connection-string@2.14.1: {}
 
   pg-int8@1.0.1: {}
 
@@ -3676,13 +3686,13 @@ snapshots:
     dependencies:
       pg: 8.21.0
 
-  pg-pool@3.14.0(pg@8.22.0):
+  pg-pool@3.14.0(pg@8.23.1):
     dependencies:
-      pg: 8.22.0
+      pg: 8.23.1
 
   pg-protocol@1.14.0: {}
 
-  pg-protocol@1.15.0: {}
+  pg-protocol@1.16.1: {}
 
   pg-types@2.2.0:
     dependencies:
@@ -3702,15 +3712,15 @@ snapshots:
     optionalDependencies:
       pg-cloudflare: 1.4.0
 
-  pg@8.22.0:
+  pg@8.23.1:
     dependencies:
-      pg-connection-string: 2.14.0
-      pg-pool: 3.14.0(pg@8.22.0)
-      pg-protocol: 1.15.0
+      pg-connection-string: 2.14.1
+      pg-pool: 3.14.0(pg@8.23.1)
+      pg-protocol: 1.16.1
       pg-types: 2.2.0
       pgpass: 1.0.5
     optionalDependencies:
-      pg-cloudflare: 1.4.0
+      pg-cloudflare: 1.4.1
 
   pgpass@1.0.5:
     dependencies:
@@ -4166,7 +4176,7 @@ snapshots:
 
   util-deprecate@1.0.2: {}
 
-  vite@8.0.8(@types/node@25.9.3)(jiti@2.7.0)(yaml@2.9.0):
+  vite@8.0.8(@types/node@25.9.3)(jiti@2.7.0)(yaml@2.9.1):
     dependencies:
       lightningcss: 1.32.0
       picomatch: 4.0.4
@@ -4177,12 +4187,12 @@ snapshots:
       '@types/node': 25.9.3
       fsevents: 2.3.3
       jiti: 2.7.0
-      yaml: 2.9.0
+      yaml: 2.9.1
 
-  vitest@4.1.8(@types/node@25.9.3)(vite@8.0.8(@types/node@25.9.3)(jiti@2.7.0)(yaml@2.9.0)):
+  vitest@4.1.8(@types/node@25.9.3)(vite@8.0.8(@types/node@25.9.3)(jiti@2.7.0)(yaml@2.9.1)):
     dependencies:
       '@vitest/expect': 4.1.8
-      '@vitest/mocker': 4.1.8(vite@8.0.8(@types/node@25.9.3)(jiti@2.7.0)(yaml@2.9.0))
+      '@vitest/mocker': 4.1.8(vite@8.0.8(@types/node@25.9.3)(jiti@2.7.0)(yaml@2.9.1))
       '@vitest/pretty-format': 4.1.8
       '@vitest/runner': 4.1.8
       '@vitest/snapshot': 4.1.8
@@ -4199,7 +4209,7 @@ snapshots:
       tinyexec: 1.2.4
       tinyglobby: 0.2.17
       tinyrainbow: 3.1.0
-      vite: 8.0.8(@types/node@25.9.3)(jiti@2.7.0)(yaml@2.9.0)
+      vite: 8.0.8(@types/node@25.9.3)(jiti@2.7.0)(yaml@2.9.1)
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 25.9.3
@@ -4253,6 +4263,8 @@ snapshots:
   y18n@5.0.8: {}
 
   yaml@2.9.0: {}
+
+  yaml@2.9.1: {}
 
   yargs-parser@21.1.1: {}
 
