@@ -93,6 +93,10 @@ export function createMethodRouter(options: MethodRouterOptions): MethodRouter {
       const domain = emailDomainOf(identifier);
       const required = domain ? await ssoRequiredDomain(q, [domain]) : null;
       if (required) throw new SsoRequiredError(required);
+      // The same verdict completeOtp reaches on the resolved user, with the same
+      // response an unknown identifier gets, so it doesn't reveal whose a phone is.
+      const user = await handler.resolveUser?.({ db: options.db, identifier });
+      if (user && (await ssoRequiredDomainForUser(q, user.userId))) return { otpSent: true };
       return handler.initiate({ db: options.db, identifier });
     },
 

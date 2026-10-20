@@ -84,8 +84,8 @@ fall through.
 | `GET …/sign-in/options` | What the sign-in screen renders for this tenant. | tenant from `tenantSlugFromRequest` | `{ tenantId, otpAllowed, authDomains: [{ authDomainId, displayName, integrationType }] }` |
 | `POST …/otp/initiate` | Send an OTP. | `{ identifier }` | `{ otpSent: true }` |
 | `POST …/otp/complete` | Verify an OTP, mint a session. | `{ identifier, credential, returnTo? }` | `200` + session cookie, `{ ok: true, returnTo }` |
-| `GET …/oidc/start?authDomainId=&returnTo=` | Begin OIDC: redirect to the IdP. | query params | `302` to the IdP + a signed login-state cookie |
-| `GET …/oidc/callback` | Finish OIDC: verify, mint a session. | provider's `?code&state` + login-state cookie | `302` to `returnTo` + session cookie |
+| `GET …/oidc/start?authDomainId=&returnTo=` | Begin OIDC: redirect to the IdP. | query params | `302` to the IdP + a signed login-state cookie; on failure, `302` to `signInErrorPath` if set |
+| `GET …/oidc/callback` | Finish OIDC: verify, mint a session. | provider's `?code&state` + login-state cookie | `302` to `returnTo` + session cookie; on failure, `302` to `signInErrorPath` if set |
 | `POST …/sign-out` | Revoke the session, clear the cookie. | session cookie / bearer | `200` + cleared cookie |
 | `GET …/session` | The current identity context. | session cookie / bearer | `{ authenticated, userId, activeRole, roles, privileges }` or `401` |
 
@@ -173,6 +173,7 @@ const data = await withRequestSession(request, config, async (client, ctx) => {
 | `sessionTtl` | | Session lifetime, a Postgres interval. Default `'30 days'`. |
 | `loginStateTtlSeconds` | | OIDC login-state cookie lifetime. Default `600`. |
 | `returnToDefault` | | Post-sign-in redirect when no safe `returnTo` is given. Default `'/'`. |
+| `signInErrorPath` | | Where a failed OIDC start or callback sends the browser, with `?error=<CODE>` appended. Must be a path on this site. Omit to answer those failures with JSON. |
 | `sessionMeta` | | Derive IP/geo for the `sessions` row from the request. |
 | `logger` | | Passed through to `withSession`. |
 
@@ -183,14 +184,18 @@ const data = await withRequestSession(request, config, async (client, ctx) => {
   variant `/\host` (which browsers normalize to `//host`) fall back to
   `returnToDefault`.
 - **Signed login-state** — HMAC-SHA256, constant-time verify, freshness-checked;
-  a tampered or stale cookie is rejected (the callback returns `400`).
+  a tampered or stale cookie is rejected (the callback returns `400`, or redirects
+  to `signInErrorPath` with `INVALID_LOGIN_STATE` when that is set).
 - **SSO-required email domains enforced server-side**, on every sub-domain, not
   just hidden in the UI.
 - **Cookies** are `HttpOnly` + `Secure` + `SameSite=Lax`; the session token is a
   256-bit opaque value whose hash is all that's stored.
 - **Error mapping is opaque** — handlers map known auth errors to status codes
   (`400`/`401`/`403`) with generic messages and never leak internals (unknown
-  errors become a bare `500`).
+  errors become a bare `500`). With `signInErrorPath` set, the OIDC endpoints
+  redirect there with only the error code (`SIGN_IN_FAILED` for an unknown
+  error). The path's own query is re-encoded, so `?q=a%20b` arrives as `?q=a+b`.
+  Map the code to fixed text; anyone can link to the path with any `error`.
 
 See the [security model](/simplicity-auth/security/) for the library-wide
 guarantees.
