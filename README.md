@@ -252,6 +252,46 @@ Auth **core** depends on neither `oauth4webapi` nor Twilio — the handler subpa
 
 **What stays app-side:** parsing the request `Host` → slug, the chooser/redirect UI, and the OIDC **login-state store** — `oidc.initiate` returns `loginState` (`state`/`nonce`/`codeVerifier`) for you to persist in a short-lived signed cookie keyed by `state`, and hand back to `oidc.complete`. The **`client_secret`** lives in your secret store (passed via the `clientSecret` resolver), **not** in `auth_domains` (which holds only `issuer`/`clientId`). The [`@smplcty/auth/http`](#http-transport--smpltyauthhttp) tier handles the routes, cookies, and login-state store for you — drop it in and you write only the slug parser + the sign-in screen.
 
+### Emailed codes — `@smplcty/auth/email-code`
+
+`emailCodeHandler` (`@smplcty/auth/email-code`) signs users in with a code you
+email them. The library issues, stores and checks the code; you deliver it with
+`sendCode`, through Amazon SES or any other provider, so auth depends on no mail
+provider. It is the alternative to Twilio Verify's email channel, which works
+only through SendGrid.
+
+```ts
+import { emailCodeHandler } from '@smplcty/auth/email-code';
+
+const otpHandler = emailCodeHandler({
+  codeSecret: process.env.EMAIL_CODE_SECRET, // at least 32 bytes, never in the database
+  sendCode: ({ to, code }) => sendSignInEmail(to, code), // your message, your provider
+});
+```
+
+What it enforces, which Twilio Verify would otherwise do for you:
+
+- A code is six random digits and is valid for **10 minutes**.
+- A code works **once**, and dies after **5 wrong guesses**, even if the next one is right.
+- Sending a new code **retires the previous one** for good.
+- At most **5 codes per address per 10 minutes**. A request over the limit sends nothing and the last code stays valid.
+- Only an **HMAC** of each code is stored (`email_sign_in_codes`), keyed by `codeSecret`, so a database read alone can't brute-force the million possible codes. Rows are kept after use, expiry or replacement.
+- Like the Twilio handler, it never provisions, reports `otpSent` for an unknown address without sending, and accepts a [dev-OTP](#developer-otp--for-devs-whose-phones-cant-receive-sms) code first, sending nothing to an enrolled user.
+
+The router takes one `otpHandler`. To send email codes yourself and SMS through
+Twilio, pick the handler by identifier:
+
+```ts
+const email = emailCodeHandler({ codeSecret, sendCode });
+const sms = twilioVerifyHandler({ client });
+const pick = (identifier: string) => (identifier.includes('@') ? email : sms);
+
+const otpHandler: MethodHandler = {
+  initiate: (ctx) => pick(ctx.identifier).initiate(ctx),
+  complete: (ctx) => pick(ctx.identifier).complete(ctx),
+};
+```
+
 ## HTTP transport — `@smplcty/auth/http`
 
 The pieces above are primitives. **`@smplcty/auth/http`** wires them into
@@ -487,7 +527,8 @@ The library ships its schema as schema-flow YAML inside the package at `@smplcty
 │   ├── user_communication_methods.yaml  # + audit; qualifier (optional consumer-defined label)
 │   ├── auth_domains.yaml                 # + audit; tenant's IdP(s), 1:N, resolved by id (display_name = button)
 │   ├── sessions.yaml                     # PK = token hash; last_seen_at; geo
-│   └── dev_otp_enrollments.yaml
+│   ├── dev_otp_enrollments.yaml
+│   └── email_sign_in_codes.yaml          # emailCodeHandler's codes: HMAC only, never deleted
 ├── functions/
 │   ├── resolve_session.yaml              # pure resolver (SECURITY DEFINER)
 │   └── current_user_id.yaml              # reads app.actor_id

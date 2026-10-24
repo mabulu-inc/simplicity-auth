@@ -22,6 +22,11 @@
       "import": "./dist/methods/twilio/index.js",
       "default": "./dist/methods/twilio/index.js"
     },
+    "./email-code": {
+      "types": "./dist/methods/email-code/index.d.ts",
+      "import": "./dist/methods/email-code/index.js",
+      "default": "./dist/methods/email-code/index.js"
+    },
     "./flat-tenant": {
       "types": "./dist/scope/flat-tenant.d.ts",
       "import": "./dist/scope/flat-tenant.js",

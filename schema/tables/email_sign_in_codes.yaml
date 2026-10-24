@@ -1,0 +1,39 @@
+table: email_sign_in_codes
+# A one-time sign-in code emailed by emailCodeHandler. Rows are kept after use,
+# expiry or replacement; they are the record of every code issued.
+# Credentials: app_rls gets nothing; only the pre-auth machinery touches them.
+grants:
+  - to: app_privileged
+    privileges: [SELECT, INSERT, UPDATE]
+columns:
+  - name: email_sign_in_code_id
+    type: bigserial
+    primary_key: true
+  - name: user_communication_method_id
+    type: bigint
+    nullable: false
+    references:
+      table: user_communication_methods
+      column: user_communication_method_id
+  # HMAC-SHA256 of the code under the app's codeSecret, so a database read
+  # alone cannot brute-force the million possible codes.
+  - name: code_hash
+    type: text
+    nullable: false
+  - name: created_at
+    type: timestamptz
+    nullable: false
+    default: now()
+  - name: expires_at
+    type: timestamptz
+    nullable: false
+  - name: failed_attempts
+    type: integer
+    nullable: false
+    default: 0
+  - name: used_at
+    type: timestamptz
+  - name: superseded_at
+    type: timestamptz
+indexes:
+  - columns: [user_communication_method_id, created_at]

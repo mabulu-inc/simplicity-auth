@@ -30,6 +30,7 @@ const EXPECTED: Record<string, { rls: string[]; privileged: string[] }> = {
   // Credentials — app_rls gets NOTHING; only the privileged machinery.
   sessions: { rls: [], privileged: ['SELECT', 'INSERT', 'UPDATE'] },
   dev_otp_enrollments: { rls: [], privileged: ['SELECT', 'INSERT', 'UPDATE'] },
+  email_sign_in_codes: { rls: [], privileged: ['SELECT', 'INSERT', 'UPDATE'] },
 };
 const PRIVS = ['SELECT', 'INSERT', 'UPDATE', 'DELETE'];
 

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Sign in with a code you email yourself.** `emailCodeHandler`
+  (`@smplcty/auth/email-code`) issues and checks a one-time code, and hands it
+  to your `sendCode` to deliver through Amazon SES or any other provider, so
+  email sign-in no longer depends on Twilio Verify and SendGrid. A code lasts
+  10 minutes, works once, dies after 5 wrong guesses and is retired by the next
+  code sent; an address gets at most 5 codes in 10 minutes. Only an HMAC of
+  each code is stored, in the new `email_sign_in_codes` table, so run your
+  schema migration when you upgrade.
+
 ## [11.0.0] - 2026-10-20
 
 ### Security
