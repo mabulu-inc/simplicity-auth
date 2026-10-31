@@ -117,29 +117,24 @@
     "@release-it/keep-a-changelog": "^8.0.1",
     "@smplcty/schema-flow": "^0.24.0",
     "@smplcty/twilio": "^0.1.1",
-    "@testcontainers/postgresql": "^12.2.0",
-    "@types/node": "^22.20.5",
+    "@testcontainers/postgresql": "^12.2.1",
+    "@types/node": "^26.6.6",
     "@types/pg": "^8.23.1",
     "husky": "^9.1.7",
-    "jose": "^6.2.12",
+    "jose": "^6.2.14",
     "lint-staged": "^17.6.0",
     "oauth4webapi": "^3.8.8",
-    "oxlint": "^1.87.0",
+    "oxlint": "^1.90.0",
     "pg": "^8.23.1",
     "prettier": "^3.9.10",
-    "release-it": "^21.1.1",
+    "release-it": "^21.1.2",
     "typescript": "^7.0.2",
-    "vite": "^8.3.4",
-    "vitest": "^5.0.4"
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
   },
   "dependencies": {
     "@smplcty/db": "^4.3.0",
     "@smplcty/schema-std": "^0.0.1",
-    "otplib": "^13.5.0"
-  },
-  "pnpm": {
-    "overrides": {
-      "undici@7.29.0": "7.29.1"
-    }
+    "otplib": "^13.6.0"
   }
 }
