@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Tenant admins set up their own SSO credentials.** Each auth domain now
+  carries its own client credential, set from your app with `setClientSecret`
+  or `generateClientKey` (`@smplcty/auth/oidc`) and stored encrypted in the new
+  `auth_domain_credentials` table, so a customer's SSO no longer waits on a
+  secret added to your infrastructure and a redeploy. You supply the
+  encryption, as a `CredentialCipher` (for example an AWS KMS data key), so the
+  database never holds plaintext. No role reachable from a tenant session can
+  read a secret or private key back, including the admin who set it;
+  `getClientCredentialStatus` shows whether each is set and when. A replaced
+  credential is used on the next sign-in. Run your schema migration when you
+  upgrade.
+- **Choose how each auth domain's client authenticates.** Set
+  `tokenEndpointAuthMethod` in `integration_params` to `none`,
+  `client_secret_basic`, `client_secret_post` or `private_key_jwt`. Only that
+  method is sent, and a failure is never retried with another. An auth domain
+  without it behaves as before. `client_secret_basic` is the method RFC 6749
+  requires servers to support, and some IdPs (Okta's web apps, by default)
+  accept no other.
+- **Private-key client authentication (`private_key_jwt`).**
+  `generateClientKey` creates an RSA key pair and a self-signed certificate;
+  the customer uploads the JWKS, or the certificate for Entra, to their app
+  registration, and nothing secret travels from them to you. The assertion
+  carries the certificate thumbprint (`x5t#S256`) and uses the token endpoint
+  as its audience, as Entra requires. Generating a key needs the optional peers
+  `@peculiar/x509` and `reflect-metadata`.
 - **`signInErrorPath` sends a failed OIDC sign-in to a page your app can show.**
   The identity provider redirects the browser to the callback, so an error
   answered as JSON became the whole page, with no way back to sign-in. With
@@ -41,6 +66,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Security admins can set up SSO too.** A tenant's `security` admin, not
+  only its `settings` admin, can now maintain its auth domains, their
+  credentials, and its email domains, including `sso_required`. Marking a
+  domain verified stays out of every tenant role's reach. If some of your
+  security admins shouldn't configure SSO, check who holds that role before
+  upgrading.
+- **A `clientSecret` resolver now has a fallback.** When it returns
+  `undefined` for an auth domain that declares a secret method, the stored
+  secret is used. A resolver that returns a secret still wins.
 - **Code sign-in works on a host that names no tenant.** `otpInitiate` and
   `otpComplete` used to answer `404` whenever `tenantSlugFromRequest` returned
   nothing. Code sign-in has depended on the user's email domain, not the

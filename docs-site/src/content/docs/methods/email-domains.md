@@ -3,7 +3,7 @@ title: Email domains
 description: Which email addresses a tenant's IdP may sign in, how a tenant proves it owns a domain, and how a domain requires SSO.
 ---
 
-A tenant's settings admin configures their own IdP (`auth_domains`). An IdP can
+A tenant's security or settings admin configures their own IdP (`auth_domains`). An IdP can
 claim any email address it likes, so the library trusts it only for the email
 domains **its tenant has verified**. Without that check, a tenant admin could
 point an auth domain at an IdP they run, create `you@your-company.com` in it, and
@@ -24,7 +24,7 @@ sign in as you.
 
 ## Verifying a domain
 
-The `tenant_email_domains` table holds each claim. A settings admin, as
+The `tenant_email_domains` table holds each claim. A security or settings admin, as
 `app_rls`, can:
 
 - claim a domain: `INSERT (tenant_id, domain)`;

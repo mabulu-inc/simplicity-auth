@@ -31,6 +31,10 @@ const EXPECTED: Record<string, { rls: string[]; privileged: string[] }> = {
   sessions: { rls: [], privileged: ['SELECT', 'INSERT', 'UPDATE'] },
   dev_otp_enrollments: { rls: [], privileged: ['SELECT', 'INSERT', 'UPDATE'] },
   email_sign_in_codes: { rls: [], privileged: ['SELECT', 'INSERT', 'UPDATE'] },
+  // Column grants only for app_rls (write the ciphertext, read just the public
+  // and status columns), so no table-level privilege; the sign-in machinery
+  // reads the ciphertext for the token exchange.
+  auth_domain_credentials: { rls: [], privileged: ['SELECT'] },
 };
 const PRIVS = ['SELECT', 'INSERT', 'UPDATE', 'DELETE'];
 

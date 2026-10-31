@@ -45,15 +45,17 @@ columns:
     type: jsonb
     nullable: false
     default: "'{}'::jsonb"
-# RLS. Federation config is a settings concern: a settings admin sees and
-# maintains the auth_domains of the tenants they have settings access to. (Sign-
-# in itself reads auth_domains through the bypass pool pre-session, so ordinary
-# users never need direct access here.)
+# RLS. Setting up a tenant's SSO is a job for its security or settings admin:
+# they see and maintain the auth_domains of the tenants they hold either role
+# for. (Sign-in itself reads auth_domains through the bypass pool pre-session,
+# so ordinary users never need direct access here.)
 rls: true
 policies:
+  # The policy keeps its original name, from when only settings admins were admitted:
+  # renaming it would leave the old policy behind as a blocked destructive drop.
   - name: auth_domains_settings
     for: ALL
     to: app_rls
     permissive: true
-    using: auth_has_role('settings', auth_domains.tenant_id)
-    check: auth_has_role('settings', auth_domains.tenant_id)
+    using: auth_has_role('security', auth_domains.tenant_id) OR auth_has_role('settings', auth_domains.tenant_id)
+    check: auth_has_role('security', auth_domains.tenant_id) OR auth_has_role('settings', auth_domains.tenant_id)

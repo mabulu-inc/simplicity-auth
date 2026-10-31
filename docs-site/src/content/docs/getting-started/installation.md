@@ -20,6 +20,8 @@ neither.
 ```sh
 # OIDC (org-bound):
 pnpm add oauth4webapi          # → import { oidcHandler } from '@smplcty/auth/oidc'
+# ...and, to generate keys for private_key_jwt:
+pnpm add @peculiar/x509 reflect-metadata
 
 # Twilio Verify OTP (user-bound):
 pnpm add @smplcty/twilio       # → import { twilioVerifyHandler } from '@smplcty/auth/twilio'

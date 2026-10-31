@@ -23,6 +23,7 @@ and writes only its own domain.
 │   ├── user_communication_methods.yaml  # + audit, RLS; app_rls SELECT/INSERT/UPDATE
 │   ├── auth_domains.yaml             # + audit, RLS; app_rls SELECT/INSERT/UPDATE; tenant's IdP(s)
 │   ├── tenant_email_domains.yaml     # + audit, RLS; app_rls SELECT + column-scoped writes; verified_at app_privileged only
+│   ├── auth_domain_credentials.yaml  # + audit, RLS; encrypted client credentials; app_rls writes them, never reads them back
 │   ├── sessions.yaml                 # credential — app_privileged only; PK = token hash
 │   └── dev_otp_enrollments.yaml      # credential (TOTP secrets) — app_privileged only
 ├── functions/
@@ -64,11 +65,13 @@ declare them):
 - **`app_rls`** — the per-request, RLS-bound role. `SELECT` on reference data
   (`roles`, `communication_channels`); `SELECT/INSERT/UPDATE` on the RLS-gated
   identity tables (`tenants`, `user_roles`, `user_communication_methods`,
-  `auth_domains`); `SELECT/UPDATE` on `users`. It gets **no** access to the
-  credential tables and **cannot** raw-INSERT a user or write reference data.
+  `auth_domains`); `SELECT/UPDATE` on `users`. On `auth_domain_credentials` it
+  can write the encrypted credential but only read the status and public-key
+  columns. It gets **no** access to the other credential tables and **cannot** raw-INSERT a user or write reference data.
 - **`app_privileged`** — the trusted, `BYPASSRLS` auth machinery, a **member of
   `app_rls`** (so it inherits the above). The library grants it the privileged
   delta directly: `SELECT/INSERT/UPDATE` on `sessions` and `dev_otp_enrollments`,
+  `SELECT` on `auth_domain_credentials` (for the token exchange),
   and `INSERT` on `users` (OIDC auto-provisioning). Role membership is one-way,
   so none of this is inherited back by `app_rls`.
 
