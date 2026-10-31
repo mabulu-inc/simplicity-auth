@@ -58,10 +58,13 @@ export { createMethodRouter } from './methods/router.js';
 export {
   EmailDomainNotVerifiedError,
   OtpNotAllowedError,
+  SignInRefusedError,
   SsoRequiredError,
   VerificationFailedError,
 } from './methods/errors.js';
 export type {
+  IdentifierKind,
+  OtpHandlers,
   MethodHandler,
   MethodInitiateResult,
   MethodInitiateContext,

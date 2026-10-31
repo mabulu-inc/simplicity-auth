@@ -22,10 +22,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`MethodHandler.resolveUser`**, optional: the user `complete` would resolve
   for an identifier, without sending anything. `twilioVerifyHandler` and
   `emailCodeHandler` implement it. If you dispatch between handlers yourself,
-  forward it too (the README's dispatch example shows how).
+  forward it too, or switch to one handler per kind (below), which keeps it.
+- **One code handler per kind of identifier.** `otpHandler` (on the router and
+  the HTTP tier) also takes `{ email, phone }`: an identifier containing `@`
+  goes to `email`, anything else to `phone`. The library keeps every check for
+  both, so you no longer write your own dispatcher, where forgetting
+  `resolveUser` silently dropped the SSO check. A kind you leave out isn't
+  offered.
+- **Your own sign-in rules inside the HTTP tier.** `signIn` hooks on
+  `createAuthHandlers`: `beforeOtp` can normalize an identifier or refuse before
+  a code is sent, `beforeSession` can refuse a verified user before a session
+  exists, and `afterSignIn` runs once the session exists (to record login
+  history, for example). Refuse with the new `SignInRefusedError` and your own
+  message and code; a refusal creates no session. `beforeSession` and
+  `afterSignIn` run for OIDC sign-ins too, so a rule can't be sidestepped by
+  signing in the other way. An app no longer needs its own sign-in routes for
+  these.
 
 ### Changed
 
+- **Code sign-in works on a host that names no tenant.** `otpInitiate` and
+  `otpComplete` used to answer `404` whenever `tenantSlugFromRequest` returned
+  nothing. Code sign-in has depended on the user's email domain, not the
+  sub-domain, since 10.0.0, so they now serve those requests, for example on
+  your bare host before the user's workspace is known. A sub-domain that names
+  no tenant is still a `404`. If your app relied on that `404` to keep code
+  sign-in off the bare host, refuse it in a `beforeOtp` hook instead.
 - **Breaking: writing to an auth table without an actor now fails.** auth now
   uses `@smplcty/schema-std` 0.1, whose audit trigger refuses an insert or
   update when `app.actor_id` is not set, with

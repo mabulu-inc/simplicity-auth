@@ -27,19 +27,18 @@ What it enforces, which Twilio Verify would otherwise do for you:
 - Only an **HMAC** of each code is stored (`email_sign_in_codes`), keyed by `codeSecret`, so a database read alone can't brute-force the million possible codes. Rows are kept after use, expiry or replacement.
 - Like the Twilio handler, it never provisions, reports `otpSent` for an unknown address without sending, and accepts a [dev-OTP](/simplicity-auth/methods/dev-otp/) code first, sending nothing to an enrolled user.
 
-The router takes one `otpHandler`. To send email codes yourself and SMS through
-Twilio, pick the handler by identifier:
+To send email codes yourself and SMS through Twilio, give `otpHandler` one
+handler per kind of identifier. One containing `@` is an email; anything else is
+a phone:
 
 ```ts
-const email = emailCodeHandler({ codeSecret, sendCode });
-const sms = twilioVerifyHandler({ client });
-const pick = (identifier: string) => (identifier.includes('@') ? email : sms);
-
-const otpHandler: MethodHandler = {
-  initiate: (ctx) => pick(ctx.identifier).initiate(ctx),
-  complete: (ctx) => pick(ctx.identifier).complete(ctx),
-  // Forward this too: the router uses it to send no code to someone who must
-  // sign in with SSO. Leave it out and that check is lost for both channels.
-  resolveUser: async (ctx) => (await pick(ctx.identifier).resolveUser?.(ctx)) ?? null,
+const otpHandler = {
+  email: emailCodeHandler({ codeSecret, sendCode }),
+  phone: twilioVerifyHandler({ client }),
 };
 ```
+
+The router picks the handler and keeps every check for both, including sending
+no code to someone who must sign in with SSO. Prefer this to writing your own
+dispatcher: one that doesn't forward `resolveUser` silently loses that check. A
+kind you leave out isn't offered; a sign-in with it gets `OtpNotAllowedError`.

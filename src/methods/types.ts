@@ -68,12 +68,26 @@ export interface MethodHandler {
 /**
  * Options for {@link createMethodRouter}.
  */
+/** What an identifier is: one containing `@` is an email, anything else a phone. */
+export type IdentifierKind = 'email' | 'phone';
+
+/**
+ * Code-sign-in handlers by identifier kind, e.g. `{ email: emailCodeHandler(…),
+ * phone: twilioVerifyHandler(…) }`. The router picks one per identifier and
+ * keeps every check (including `resolveUser`) for both, so an app needn't write
+ * its own dispatcher. A kind with no handler isn't offered.
+ */
+export interface OtpHandlers {
+  email?: MethodHandler;
+  phone?: MethodHandler;
+}
+
 export interface MethodRouterOptions {
   /** Used to look up tenants and their `auth_domains`. */
   db: Queryable;
-  /** The user-bound OTP handler (e.g. a `TwilioVerifyHandler`). Omit it for an
-   *  SSO-only product. */
-  otpHandler?: MethodHandler;
+  /** The user-bound code handler: one for every identifier, or one per
+   *  {@link IdentifierKind}. Omit it for an SSO-only product. */
+  otpHandler?: MethodHandler | OtpHandlers;
 }
 
 /**

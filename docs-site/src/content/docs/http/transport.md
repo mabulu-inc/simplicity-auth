@@ -114,6 +114,47 @@ configured). Addresses at a verified email domain that requires SSO are
 **refused server-side** in the OTP endpoints, on every sub-domain, so a crafted
 request can't bypass it. See [Email domains](/simplicity-auth/methods/email-domains/).
 
+Code sign-in doesn't depend on the tenant, so the OTP endpoints also answer a
+request that names no tenant (when `tenantSlugFromRequest` returns `null`), such
+as one on your bare host before the user's workspace is known. A sub-domain that
+names no tenant is still a `404`. `sign-in/options` and OIDC still need a tenant.
+
+## Your own rules around a sign-in
+
+`signIn` hooks run inside the endpoints, so an app doesn't need its own routes to
+add a rule:
+
+```ts
+import { SignInRefusedError } from '@smplcty/auth';
+
+createAuthHandlers({
+  // …
+  signIn: {
+    // Before a code is sent or checked: normalize, or refuse before anything is sent.
+    beforeOtp: ({ identifier, kind }) => {
+      if (kind === 'phone' && !smsEnabled) throw new SignInRefusedError('Text-message sign-in is off.');
+      return kind === 'phone' ? normalizePhone(identifier) : identifier;
+    },
+    // After the person is verified, by code or IdP, and before a session exists.
+    beforeSession: async ({ user }) => {
+      if (!(await hasActiveWorkspace(user.userId))) {
+        throw new SignInRefusedError("You don't have access to an active workspace.", 'NO_ACTIVE_WORKSPACE');
+      }
+    },
+    // After the session is created.
+    afterSignIn: ({ request, user, method }) => recordLogin(request, user.userId, method),
+  },
+});
+```
+
+- A refusal creates no session. A code sign-in answers `403` with your message
+  and code; an OIDC sign-in goes to `signInErrorPath` with only the code
+  (`?error=NO_ACTIVE_WORKSPACE`), or answers JSON when no error path is set.
+- `beforeSession` and `afterSignIn` run for both code and OIDC sign-ins, so a rule
+  can't be sidestepped by choosing the other method. `method` says which one.
+- `afterSignIn` runs after the session exists. If it throws, the error goes to
+  `logger` and the sign-in still succeeds.
+
 ## Cookies
 
 Two cookies, both built from Web standards (no `Buffer`; edge-safe):
@@ -167,7 +208,8 @@ const data = await withRequestSession(request, config, async (client, ctx) => {
 | `cookie.sameSite` / `secure` / `path` / `maxAgeSeconds` | | Cookie attributes (defaults: `lax` / `true` / `/` / 30 days). |
 | `loginStateSecret` | ✓ | HMAC secret for the OIDC login-state cookie. |
 | `tenantSlugFromRequest` | ✓ | Resolve the tenant slug from the request (e.g. parse the Host). |
-| `otpHandler` | | The user-bound OTP handler. Omit for SSO-only. |
+| `otpHandler` | | The user-bound code handler: one for every identifier, or one per kind, `{ email, phone }`. Omit for SSO-only. |
+| `signIn` | | The app's own rules around a sign-in: `beforeOtp`, `beforeSession`, `afterSignIn`. See [Your own rules around a sign-in](#your-own-rules-around-a-sign-in). |
 | `oidc` | | The `oidcHandler`. Omit if the app has no OIDC. |
 | `scope` | | App-owned intra-tenant scope hook (applied by `withRequestSession` and `GET …/session`). |
 | `sessionTtl` | | Session lifetime, a Postgres interval. Default `'30 days'`. |
@@ -175,7 +217,7 @@ const data = await withRequestSession(request, config, async (client, ctx) => {
 | `returnToDefault` | | Post-sign-in redirect when no safe `returnTo` is given. Default `'/'`. |
 | `signInErrorPath` | | Where a failed OIDC start or callback sends the browser, with `?error=<CODE>` appended. Must be a path on this site. Omit to answer those failures with JSON. |
 | `sessionMeta` | | Derive IP/geo for the `sessions` row from the request. |
-| `logger` | | Passed through to `withSession`. |
+| `logger` | | Passed through to `withSession`; also receives a failed `afterSignIn`. |
 
 ## Security
 

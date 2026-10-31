@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 import type { GeoLocation, Logger, ScopeHook } from '../types.js';
-import type { MethodHandler } from '../methods/types.js';
+import type { IdentifierKind, MethodHandler, OtpHandlers, ResolvedUser } from '../methods/types.js';
 import type { OidcHandler } from '../methods/oidc/index.js';
 
 /** Session-cookie attributes. The `domain` covers sub-domain sharing (e.g. `.app.example.com`). */
@@ -49,8 +49,11 @@ export interface AuthHttpConfig {
    *  error code appended as `?error=<CODE>`. Must be a path on this site;
    *  `createAuthHandlers` throws otherwise. Omit it to answer those failures with JSON. */
   signInErrorPath?: string;
-  /** The user-bound OTP handler (e.g. `twilioVerifyHandler`). Omit for SSO-only. */
-  otpHandler?: MethodHandler;
+  /** The user-bound code handler: one for every identifier (e.g. `twilioVerifyHandler`),
+   *  or one per kind, `{ email, phone }`. Omit for SSO-only. */
+  otpHandler?: MethodHandler | OtpHandlers;
+  /** The app's own rules around a sign-in. See {@link SignInHooks}. */
+  signIn?: SignInHooks;
   /** The org-bound OIDC handler (`oidcHandler` from `@smplcty/auth/oidc`). Omit if the app has no OIDC. */
   oidc?: OidcHandler;
   /** App-owned intra-tenant scope hook, applied by `withRequestSession` / the session endpoint. */
@@ -58,6 +61,33 @@ export interface AuthHttpConfig {
   logger?: Logger;
   /** Derive IP/geo for the `sessions` row from the request. */
   sessionMeta?: (request: Request) => RequestSessionMeta | undefined;
+}
+
+/** How the person proved who they are. */
+export type SignInMethod = 'otp' | 'oidc';
+
+/**
+ * The app's own rules around a sign-in, run inside the HTTP tier. Refuse by
+ * throwing `SignInRefusedError` with the message to show. A refusal never
+ * creates a session.
+ */
+export interface SignInHooks {
+  /** Before a code is sent (`initiate`) or checked (`complete`). Return the
+   *  identifier to use, e.g. a normalized phone number, or nothing to keep it.
+   *  Throw to refuse before anything is sent, e.g. a channel the app has
+   *  switched off. */
+  beforeOtp?(ctx: {
+    request: Request;
+    identifier: string;
+    kind: IdentifierKind;
+    step: 'initiate' | 'complete';
+  }): string | void | Promise<string | void>;
+  /** After the person is verified, by code or by an IdP, and before a session
+   *  exists. Throw to refuse, e.g. a user with no access to an active workspace. */
+  beforeSession?(ctx: { request: Request; user: ResolvedUser; method: SignInMethod }): void | Promise<void>;
+  /** After the session is created, e.g. to record login history. A throw is
+   *  logged and never fails the sign-in, which has already happened. */
+  afterSignIn?(ctx: { request: Request; user: ResolvedUser; method: SignInMethod }): void | Promise<void>;
 }
 
 /**

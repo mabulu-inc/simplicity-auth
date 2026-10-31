@@ -384,6 +384,30 @@ describe('a verified domain that requires SSO closes code sign-in everywhere', (
         expect(result).toEqual(unknown);
       });
 
+      it('a per-kind handler map keeps the check for both channels, with no dispatcher to get wrong', async () => {
+        sent.length = 0;
+        emailed.length = 0;
+        const sms = twilioVerifyHandler({
+          client: {
+            async sendVerificationCode({ to }) {
+              sent.push(to);
+              return true;
+            },
+            async verifyVerificationCode() {
+              return true;
+            },
+          },
+        });
+        const router = createMethodRouter({ db: db.pool, otpHandler: { email: emailCode(), phone: sms } });
+
+        await router.initiateOtp({ identifier: '+15555550111' });
+        await router.initiateOtp({ identifier: 'alice@personal.example' });
+        await router.initiateOtp({ identifier: '+15555550122' });
+
+        expect(emailed).toEqual([]);
+        expect(sent).toEqual(['+15555550122']);
+      });
+
       // The README's dispatch example: one handler per identifier kind, with
       // resolveUser forwarded. Without the forward the router can't see the
       // user, and the SSO check is lost for both channels.

@@ -4,8 +4,9 @@ import { createAuthHandlers } from '../src/http/index.js';
 import type { AuthHttpConfig } from '../src/http/index.js';
 import { signLoginState, verifyLoginState } from '../src/http/cookies.js';
 import { oidcHandler } from '../src/methods/oidc/index.js';
-import { VerificationFailedError } from '../src/index.js';
-import type { MethodHandler } from '../src/index.js';
+import { SignInRefusedError, VerificationFailedError } from '../src/index.js';
+import type { MethodHandler, ResolvedUser } from '../src/index.js';
+import type { SignInMethod } from '../src/http/index.js';
 import { seedVerifiedDomain } from './helpers/email-domains.js';
 import { startTestDb, type TestDb } from './helpers/test-db.js';
 
@@ -489,6 +490,59 @@ describe('createAuthHandlers — OIDC end-to-end', () => {
     });
   });
 
+  describe('with sign-in hooks (#26)', () => {
+    it("refuses a verified IdP user before a session exists, sending only the app's code to the error path", async () => {
+      const before = await sessionCount();
+      const config = makeConfig({
+        signInErrorPath: '/sign-in/error',
+        oidc: oidcHandler({ fetch: fetchImpl, clientSecret: () => 'mock-secret' }),
+        signIn: {
+          beforeSession: ({ method }) => {
+            expect(method).toBe('oidc');
+            throw new SignInRefusedError('No active workspace', 'NO_ACTIVE_WORKSPACE');
+          },
+        },
+      });
+
+      const res = await oidcSignIn(config, 'bob@globex.com');
+
+      expect(res.status).toBe(302);
+      expect(res.headers.get('location')).toBe('/sign-in/error?error=NO_ACTIVE_WORKSPACE');
+      expect(setCookieValue(res, 'pn_session')).toBeFalsy();
+      expect(await sessionCount()).toBe(before);
+    });
+
+    it('runs afterSignIn for an IdP sign-in', async () => {
+      const seen: { user: ResolvedUser; method: SignInMethod }[] = [];
+      const config = makeConfig({
+        oidc: oidcHandler({ fetch: fetchImpl, clientSecret: () => 'mock-secret' }),
+        signIn: { afterSignIn: ({ user, method }) => void seen.push({ user, method }) },
+      });
+
+      const res = await oidcSignIn(config, 'bob@globex.com');
+
+      expect(res.status).toBe(302);
+      expect(setCookieValue(res, 'pn_session')).toBeTruthy();
+      expect(seen).toEqual([{ user: expect.objectContaining({ userId: db.ids.users.bob }), method: 'oidc' }]);
+    });
+
+    async function oidcSignIn(config: AuthHttpConfig, email: string): Promise<Response> {
+      const handlers = createAuthHandlers(config);
+      const start = await handlers.oidcStart(
+        req('GET', `https://app.test/auth/oidc/start?authDomainId=${authDomainId}`),
+      );
+      const state = new URL(start.headers.get('location')!).searchParams.get('state')!;
+      const stateCookie = setCookieValue(start, 'pn_session_oidc')!;
+      const login = await verifyLoginState(stateCookie, 'test-login-state-secret', 600);
+      await signIdToken({ sub: `sub-${email}`, nonce: login!.nonce, email });
+      return handlers.oidcCallback(
+        req('GET', `https://app.test/auth/oidc/callback?code=test-code&state=${state}`, {
+          cookie: `pn_session_oidc=${stateCookie}`,
+        }),
+      );
+    }
+  });
+
   it('OIDC endpoints 404 when OIDC is not configured', async () => {
     const handlers = createAuthHandlers(makeConfig()); // no oidc
     expect((await handlers.oidcStart(req('GET', 'https://app.test/auth/oidc/start?authDomainId=1'))).status).toBe(404);
@@ -536,5 +590,157 @@ describe('createAuthHandlers — session, sign-out, routing', () => {
     expect(await handlers.handle(req('GET', 'https://app.test/api/widgets'))).toBeNull();
     // Wrong method on a known path also falls through.
     expect(await handlers.handle(req('POST', 'https://app.test/api/auth/session'))).toBeNull();
+  });
+});
+
+async function sessionCount(): Promise<number> {
+  const { rows } = await db.pool.query<{ n: number }>('SELECT count(*)::int AS n FROM sessions');
+  return rows[0]!.n;
+}
+
+const initiate = (identifier: string, slug?: string) =>
+  req('POST', 'https://app.test/auth/otp/initiate', { slug, body: { identifier } });
+const complete = (identifier: string, slug?: string) =>
+  req('POST', 'https://app.test/auth/otp/complete', { slug, body: { identifier, credential: '123456' } });
+
+describe('createAuthHandlers — code sign-in without a tenant (#26)', () => {
+  it('serves code sign-in on the bare host, where the request names no tenant', async () => {
+    const handlers = createAuthHandlers(makeConfig());
+
+    expect((await handlers.otpInitiate(initiate('bob@globex.com'))).status).toBe(200);
+    const done = await handlers.otpComplete(complete('bob@globex.com'));
+
+    expect(done.status).toBe(200);
+    expect(setCookieValue(done, 'pn_session')).toBeTruthy();
+  });
+
+  it('still answers 404 for a sub-domain that names no tenant', async () => {
+    const handlers = createAuthHandlers(makeConfig());
+
+    expect((await handlers.otpInitiate(initiate('bob@globex.com', 'nope'))).status).toBe(404);
+    expect((await handlers.otpComplete(complete('bob@globex.com', 'nope'))).status).toBe(404);
+  });
+});
+
+describe('createAuthHandlers — sign-in hooks (#26)', () => {
+  it('beforeOtp replaces the identifier before it is used, at both steps', async () => {
+    const steps: string[] = [];
+    const handlers = createAuthHandlers(
+      makeConfig({
+        signIn: {
+          beforeOtp: ({ identifier, kind, step }) => {
+            steps.push(`${step}:${kind}`);
+            return identifier.trim().toLowerCase();
+          },
+        },
+      }),
+    );
+
+    expect((await handlers.otpInitiate(initiate('  BOB@globex.com '))).status).toBe(200);
+    const done = await handlers.otpComplete(complete('  BOB@globex.com '));
+
+    expect(done.status).toBe(200);
+    expect(steps).toEqual(['initiate:email', 'complete:email']);
+  });
+
+  it("beforeOtp can refuse before anything is sent, with the app's message", async () => {
+    let sent = 0;
+    const handlers = createAuthHandlers(
+      makeConfig({
+        otpHandler: { ...mockOtp, initiate: async () => (sent++, { otpSent: true }) },
+        signIn: {
+          beforeOtp: ({ kind }) => {
+            if (kind === 'phone') throw new SignInRefusedError('Text-message sign-in is switched off');
+          },
+        },
+      }),
+    );
+
+    const res = await handlers.otpInitiate(initiate('+15555550100'));
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'Text-message sign-in is switched off', code: 'SIGN_IN_REFUSED' });
+    expect(sent).toBe(0);
+  });
+
+  it("beforeSession refuses a verified user with the app's message, and no session is created", async () => {
+    const before = await sessionCount();
+    const handlers = createAuthHandlers(
+      makeConfig({
+        signIn: {
+          beforeSession: ({ user, method }) => {
+            expect(method).toBe('otp');
+            if (user.userId === db.ids.users.bob) {
+              throw new SignInRefusedError("You don't have access to an active workspace.", 'NO_ACTIVE_WORKSPACE');
+            }
+          },
+        },
+      }),
+    );
+
+    const res = await handlers.otpComplete(complete('bob@globex.com'));
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: "You don't have access to an active workspace.",
+      code: 'NO_ACTIVE_WORKSPACE',
+    });
+    expect(setCookieValue(res, 'pn_session')).toBeFalsy();
+    expect(await sessionCount()).toBe(before);
+  });
+
+  it('afterSignIn sees the signed-in user; if it throws, the error is logged and the sign-in stands', async () => {
+    const seen: { user: ResolvedUser; method: SignInMethod }[] = [];
+    const logged: string[] = [];
+    const handlers = createAuthHandlers(
+      makeConfig({
+        logger: {
+          debug() {},
+          info() {},
+          warn() {},
+          error: (_data, msg) => void logged.push(msg),
+        },
+        signIn: {
+          afterSignIn: ({ user, method }) => {
+            seen.push({ user, method });
+            throw new Error('login history is down');
+          },
+        },
+      }),
+    );
+
+    const res = await handlers.otpComplete(complete('bob@globex.com'));
+
+    expect(res.status).toBe(200);
+    expect(setCookieValue(res, 'pn_session')).toBeTruthy();
+    expect(seen).toEqual([{ user: expect.objectContaining({ userId: db.ids.users.bob }), method: 'otp' }]);
+    expect(logged).toEqual(['afterSignIn hook failed; the sign-in stands']);
+  });
+});
+
+describe('createAuthHandlers — one code handler per identifier kind (#26)', () => {
+  it('sends each identifier to the handler for its kind', async () => {
+    const used: string[] = [];
+    const tagged = (tag: string): MethodHandler => ({
+      initiate: async () => (used.push(tag), { otpSent: true }),
+      complete: mockOtp.complete,
+    });
+    const handlers = createAuthHandlers(makeConfig({ otpHandler: { email: tagged('email'), phone: tagged('phone') } }));
+
+    await handlers.otpInitiate(initiate('bob@globex.com'));
+    await handlers.otpInitiate(initiate('+15555550100'));
+
+    expect(used).toEqual(['email', 'phone']);
+  });
+
+  it('refuses a kind with no handler, and reports code sign-in as offered when any kind is', async () => {
+    const handlers = createAuthHandlers(makeConfig({ otpHandler: { email: mockOtp } }));
+
+    const res = await handlers.otpInitiate(initiate('+15555550100'));
+    const options = await handlers.signInOptions(req('GET', 'https://app.test/auth/sign-in/options', { slug: 'acme' }));
+
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ code: 'OTP_NOT_ALLOWED' });
+    expect(((await options.json()) as OptionsBody).otpAllowed).toBe(true);
   });
 });

@@ -2,7 +2,8 @@ import type { Pool, PoolClient } from 'pg';
 import { createSession } from '../create-session.js';
 import { revokeSession } from '../revoke-session.js';
 import { withSession } from '../with-session.js';
-import { createMethodRouter } from '../methods/router.js';
+import { createMethodRouter, identifierKind } from '../methods/router.js';
+import { noopLogger } from '../internal/noop-logger.js';
 import {
   AuthError,
   InvalidInputError,
@@ -13,6 +14,7 @@ import {
 import {
   EmailDomainNotVerifiedError,
   OtpNotAllowedError,
+  SignInRefusedError,
   SsoRequiredError,
   VerificationFailedError,
 } from '../methods/errors.js';
@@ -26,7 +28,7 @@ import {
   verifyLoginState,
   type SerializeCookieOptions,
 } from './cookies.js';
-import type { AuthHandlers, AuthHttpConfig } from './types.js';
+import type { AuthHandlers, AuthHttpConfig, SignInMethod } from './types.js';
 
 const DEFAULT_SESSION_TTL = '30 days';
 const DEFAULT_LOGIN_STATE_TTL = 600;
@@ -112,6 +114,7 @@ function toErrorResponse(err: unknown): Response {
     return json({ error: 'This organization has not verified that email domain', code: err.code }, 403);
   }
   if (err instanceof VerificationFailedError) return json({ error: 'Verification failed', code: err.code }, 401);
+  if (err instanceof SignInRefusedError) return json({ error: err.message, code: err.code }, 403);
   if (err instanceof RoleNotHeldError) return json({ error: 'Role not held', code: err.code }, 403);
   if (err instanceof SessionExpiredError) return json({ error: 'Session expired', code: err.code }, 401);
   if (err instanceof SessionNotFoundError) return json({ error: 'Not authenticated', code: err.code }, 401);
@@ -188,13 +191,31 @@ export function createAuthHandlers(config: AuthHttpConfig): AuthHandlers {
     return signInFailure(code, toErrorResponse(err), clearLoginState);
   }
 
-  async function resolveTenantId(request: Request): Promise<number | null> {
+  // Code sign-in has depended on the user's email domain, not the sub-domain,
+  // since 10.0.0, so a request with no tenant (the bare host) is served. A
+  // sub-domain that names no tenant is still a 404.
+  async function namesUnknownTenant(request: Request): Promise<boolean> {
     const slug = await config.tenantSlugFromRequest(request);
-    if (!slug) return null;
-    const { rows } = await pool.query<{ tenantId: string | number }>(SELECT_TENANT_ID, [slug]);
-    const id = rows[0]?.tenantId;
-    // bigint arrives from pg as a string; downstream validators want a number.
-    return id == null ? null : Number(id);
+    if (!slug) return false;
+    const { rows } = await pool.query(SELECT_TENANT_ID, [slug]);
+    return rows.length === 0;
+  }
+
+  async function beforeOtp(request: Request, identifier: string, step: 'initiate' | 'complete'): Promise<string> {
+    const replaced = await config.signIn?.beforeOtp?.({ request, identifier, kind: identifierKind(identifier), step });
+    return replaced || identifier;
+  }
+
+  /** Run the app's hooks around minting the session; return its Set-Cookie value. */
+  async function startSession(request: Request, user: ResolvedUser, method: SignInMethod): Promise<string> {
+    await config.signIn?.beforeSession?.({ request, user, method });
+    const cookie = await mintSessionCookie(request, user);
+    try {
+      await config.signIn?.afterSignIn?.({ request, user, method });
+    } catch (err) {
+      (config.logger ?? noopLogger).error({ err, method }, 'afterSignIn hook failed; the sign-in stands');
+    }
+    return cookie;
   }
 
   /** Create a session for the verified user and return the Set-Cookie value. */
@@ -238,10 +259,9 @@ export function createAuthHandlers(config: AuthHttpConfig): AuthHandlers {
 
     async otpInitiate(request) {
       try {
-        // Sign-in happens on a tenant's sub-domain; an unknown one is a 404.
-        if ((await resolveTenantId(request)) === null) return json({ error: 'unknown tenant' }, 404);
+        if (await namesUnknownTenant(request)) return json({ error: 'unknown tenant' }, 404);
         const body = await readJson(request);
-        const identifier = requireString(body, 'identifier');
+        const identifier = await beforeOtp(request, requireString(body, 'identifier'), 'initiate');
         const result = await router.initiateOtp({ identifier });
         return json(result);
       } catch (err) {
@@ -251,12 +271,12 @@ export function createAuthHandlers(config: AuthHttpConfig): AuthHandlers {
 
     async otpComplete(request) {
       try {
-        if ((await resolveTenantId(request)) === null) return json({ error: 'unknown tenant' }, 404);
+        if (await namesUnknownTenant(request)) return json({ error: 'unknown tenant' }, 404);
         const body = await readJson(request);
-        const identifier = requireString(body, 'identifier');
+        const identifier = await beforeOtp(request, requireString(body, 'identifier'), 'complete');
         const credential = requireString(body, 'credential');
         const user = await router.completeOtp({ identifier, credential });
-        const cookie = await mintSessionCookie(request, user);
+        const cookie = await startSession(request, user, 'otp');
         const returnTo = sanitizeReturnTo(typeof body.returnTo === 'string' ? body.returnTo : undefined);
         const res = json({ ok: true, returnTo: returnTo ?? returnToDefault });
         res.headers.append('set-cookie', cookie);
@@ -322,7 +342,7 @@ export function createAuthHandlers(config: AuthHttpConfig): AuthHandlers {
           callbackUrl: request.url,
           loginState: { state: loginState.state, nonce: loginState.nonce, codeVerifier: loginState.codeVerifier },
         });
-        const cookie = await mintSessionCookie(request, user);
+        const cookie = await startSession(request, user, 'oidc');
         const res = redirect(sanitizeReturnTo(loginState.returnTo) ?? returnToDefault);
         res.headers.append('set-cookie', cookie);
         // Clear the one-time login-state cookie.
