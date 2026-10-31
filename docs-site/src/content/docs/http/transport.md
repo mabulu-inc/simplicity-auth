@@ -81,7 +81,7 @@ fall through.
 
 | Method & path | Purpose | Request | Response |
 | --- | --- | --- | --- |
-| `GET …/sign-in/options` | What the sign-in screen renders for this tenant. | tenant from `tenantSlugFromRequest` | `{ tenantId, otpAllowed, authDomains: [{ authDomainId, displayName, integrationType }] }` |
+| `GET …/sign-in/options` | What the sign-in screen renders for this tenant. | tenant from `tenantSlugFromRequest` | `{ tenantId, otpAllowed, ssoRequired, authDomains: [{ authDomainId, displayName, integrationType }] }` |
 | `POST …/otp/initiate` | Send an OTP. | `{ identifier }` | `{ otpSent: true }` |
 | `POST …/otp/complete` | Verify an OTP, mint a session. | `{ identifier, credential, returnTo? }` | `200` + session cookie, `{ ok: true, returnTo }` |
 | `GET …/oidc/start?authDomainId=&returnTo=` | Begin OIDC: redirect to the IdP. | query params | `302` to the IdP + a signed login-state cookie; on failure, `302` to `signInErrorPath` if set |
@@ -95,7 +95,7 @@ fall through.
 ## The sign-in flow
 
 ```text
-                    GET /auth/sign-in/options        → { authDomains[], otpAllowed }
+                    GET /auth/sign-in/options        → { authDomains[], otpAllowed, ssoRequired }
  sign-in screen ───────────────────────────────────────────────────────────────────►
         │
         ├─ user picks an IdP button ──► GET /auth/oidc/start?authDomainId=ID

@@ -229,7 +229,7 @@ const oidc = oidcHandler({ clientSecret: (ad) => secrets.get(ad.tenantId) }); //
 
 // Sign-in page — app parsed Host → 'acme':
 const opts = await router.signInOptions({ tenantSlug: 'acme' });
-// opts = { tenantId, authDomains: AuthDomain[], otpAllowed: boolean }
+// opts = { tenantId, authDomains: AuthDomain[], otpAllowed: boolean, ssoRequired: boolean }
 //   render: a button per opts.authDomains + an OTP form iff opts.otpAllowed (an OTP handler is configured)
 
 // OIDC — user picked an IdP (an AuthDomain from opts.authDomains):

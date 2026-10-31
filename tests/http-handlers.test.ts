@@ -214,7 +214,10 @@ describe('createAuthHandlers — OTP', () => {
       req('POST', 'https://app.test/auth/otp/initiate', { slug: 'globex', body: { identifier: 'x@acme.com' } }),
     );
     expect(ssoOnly.status).toBe(403);
-    expect(await ssoOnly.json()).toMatchObject({ code: 'SSO_REQUIRED' });
+    expect(await ssoOnly.json()).toMatchObject({ code: 'SSO_REQUIRED', domain: 'acme.com' });
+
+    const options = await handlers.signInOptions(req('GET', 'https://app.test/auth/sign-in/options', { slug: 'acme' }));
+    expect(await options.json()).toMatchObject({ ssoRequired: true });
   });
 });
 

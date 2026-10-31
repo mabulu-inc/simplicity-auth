@@ -92,9 +92,17 @@ Before sending a code, an email typed at that domain is refused with
 `SsoRequiredError`. A phone number, or an email at another domain, belonging to
 such a user gets the same `{ otpSent: true }` an unknown identifier gets, and no
 code is sent. Your sign-in screen can't tell them apart, so tell users at an
-SSO-required domain to use their organization's sign-in. That pre-send check
+SSO-required domain to use their organization's sign-in. Or pass
+`revealSsoRequiredUsers: true` to `createMethodRouter` (or `createAuthHandlers`)
+to refuse those identifiers with `SsoRequiredError` too, naming the domain, so
+the screen can send the person to their organization's sign-in. The cost: anyone
+can then learn whether a phone number belongs to someone who must use SSO. That
+pre-send check
 needs the handler's `resolveUser`. `twilioVerifyHandler` has it; a custom
 `MethodHandler` without it still sends the code, and `completeOtp` refuses it.
+
+`signInOptions` reports `ssoRequired: true` for a tenant with a verified domain
+that requires SSO, so its sub-domain's sign-in screen can offer only its IdPs.
 
 Outsiders are unaffected. `sam@mabulu.com` isn't at `acme.com`, so they sign in
 their usual way and reach Acme through whatever roles they hold.

@@ -88,6 +88,12 @@ export interface MethodRouterOptions {
   /** The user-bound code handler: one for every identifier, or one per
    *  {@link IdentifierKind}. Omit it for an SSO-only product. */
   otpHandler?: MethodHandler | OtpHandlers;
+  /** Refuse an identifier whose owner must use SSO (their phone, or their
+   *  address at another domain) with {@link SsoRequiredError}, so the page can
+   *  send them to their organization's sign-in. Off by default: the router then
+   *  answers as for an unknown identifier, because refusing reveals that the
+   *  identifier belongs to someone who must use SSO. */
+  revealSsoRequiredUsers?: boolean;
 }
 
 /**
@@ -105,6 +111,9 @@ export interface SignInOptions {
   /** Whether to offer OTP: an `otpHandler` is configured. (Addresses at an
    *  SSO-required verified domain are still refused, per address.) */
   readonly otpAllowed: boolean;
+  /** Whether the tenant has a verified email domain that requires SSO: its
+   *  people must sign in through {@link authDomains}. */
+  readonly ssoRequired: boolean;
 }
 
 /**
@@ -119,7 +128,8 @@ export interface MethodRouter {
   signInOptions(input: { tenantSlug: string }): Promise<SignInOptions | null>;
   /** User-bound (OTP) phase 1. Throws {@link OtpNotAllowedError} when no OTP
    *  handler is configured, {@link SsoRequiredError} for an address at an
-   *  SSO-required verified domain. */
+   *  SSO-required verified domain, and with `revealSsoRequiredUsers` for any
+   *  identifier whose owner has one. */
   initiateOtp(input: { identifier: string }): Promise<MethodInitiateResult>;
   /** User-bound (OTP) phase 2. Throws {@link OtpNotAllowedError} when no OTP
    *  handler is configured, {@link SsoRequiredError} when the signed-in user has

@@ -288,6 +288,7 @@ describe('a verified domain that requires SSO closes code sign-in everywhere', (
     await expect(signIn('alice@acme.com')).resolves.toMatchObject({
       userId: db.ids.users.alice,
     });
+    expect(await router().signInOptions({ tenantSlug: 'acme' })).toMatchObject({ ssoRequired: false });
     await asAppInit((c) =>
       c.query(`UPDATE tenant_email_domains SET deleted_at = now() WHERE tenant_email_domain_id = $1`, [row.id]),
     );
@@ -304,6 +305,11 @@ describe('a verified domain that requires SSO closes code sign-in everywhere', (
         .catch((e: unknown) => e);
       expect(err).toBeInstanceOf(SsoRequiredError);
       expect(err).toMatchObject({ code: 'SSO_REQUIRED', domain: 'acme.com' });
+    });
+
+    it("marks acme's sign-in options as requiring SSO, and only acme's", async () => {
+      expect(await router().signInOptions({ tenantSlug: 'acme' })).toMatchObject({ ssoRequired: true });
+      expect(await router().signInOptions({ tenantSlug: 'globex' })).toMatchObject({ ssoRequired: false });
     });
 
     it('refuses code sign-in for an acme.com user, even by phone', async () => {
@@ -354,6 +360,35 @@ describe('a verified domain that requires SSO closes code sign-in everywhere', (
 
         expect(sent).toEqual([]);
         expect(result).toEqual(unknown);
+      });
+
+      it.each([
+        ['her phone', '+15555550111'],
+        ['her email at a domain that does not require SSO', 'alice@personal.example'],
+      ])('with revealSsoRequiredUsers, refuses an acme.com user by %s, naming the domain', async (_label, id) => {
+        sent.length = 0;
+        const router = createMethodRouter({
+          db: db.pool,
+          otpHandler: twilioVerifyHandler({
+            client: {
+              async sendVerificationCode({ to }) {
+                sent.push(to);
+                return true;
+              },
+              async verifyVerificationCode() {
+                return true;
+              },
+            },
+          }),
+          revealSsoRequiredUsers: true,
+        });
+
+        const err = await router.initiateOtp({ identifier: id }).catch((e: unknown) => e);
+
+        expect(err).toBeInstanceOf(SsoRequiredError);
+        expect(err).toMatchObject({ domain: 'acme.com' });
+        await router.initiateOtp({ identifier: '+15555550122' });
+        expect(sent).toEqual(['+15555550122']);
       });
 
       it('still sends a code to an outsider by phone', async () => {

@@ -1,5 +1,10 @@
 import { InvalidInputError } from '../errors.js';
-import { emailDomainOf, ssoRequiredDomain, ssoRequiredDomainForUser } from '../internal/email-domain.js';
+import {
+  emailDomainOf,
+  ssoRequiredDomain,
+  ssoRequiredDomainForUser,
+  tenantRequiresSso,
+} from '../internal/email-domain.js';
 import type { Queryable } from '../types.js';
 import { OtpNotAllowedError, SsoRequiredError } from './errors.js';
 import type {
@@ -93,6 +98,7 @@ export function createMethodRouter(options: MethodRouterOptions): MethodRouter {
           tenantId: Number(d.tenantId),
         })),
         otpAllowed,
+        ssoRequired: await tenantRequiresSso(q, tenant.tenantId),
       };
     },
 
@@ -105,10 +111,12 @@ export function createMethodRouter(options: MethodRouterOptions): MethodRouter {
       const domain = emailDomainOf(identifier);
       const required = domain ? await ssoRequiredDomain(q, [domain]) : null;
       if (required) throw new SsoRequiredError(required);
-      // The same verdict completeOtp reaches on the resolved user, with the same
-      // response an unknown identifier gets, so it doesn't reveal whose a phone is.
+      // The same verdict completeOtp reaches on the resolved user. By default it
+      // answers as for an unknown identifier, so it doesn't reveal whose a phone is.
       const user = await handler.resolveUser?.({ db: options.db, identifier });
-      if (user && (await ssoRequiredDomainForUser(q, user.userId))) return { otpSent: true };
+      const ownerRequires = user ? await ssoRequiredDomainForUser(q, user.userId) : null;
+      if (ownerRequires && options.revealSsoRequiredUsers) throw new SsoRequiredError(ownerRequires);
+      if (ownerRequires) return { otpSent: true };
       return handler.initiate({ db: options.db, identifier });
     },
 
