@@ -101,10 +101,10 @@
     ]
   },
   "peerDependencies": {
+    "@smplcty/schema-flow": ">=0.25.0",
     "@smplcty/twilio": ">=0.1.0",
     "oauth4webapi": ">=3.0.0",
-    "pg": ">=8.0.0",
-    "@smplcty/schema-flow": ">=0.25.0"
+    "pg": ">=8.0.0"
   },
   "peerDependenciesMeta": {
     "@smplcty/twilio": {
@@ -119,7 +119,7 @@
   },
   "devDependencies": {
     "@release-it/keep-a-changelog": "^8.0.1",
-    "@smplcty/schema-flow": "^0.24.0",
+    "@smplcty/schema-flow": "^0.26.0",
     "@smplcty/twilio": "^0.1.1",
     "@testcontainers/postgresql": "^12.2.1",
     "@types/node": "^26.6.6",
