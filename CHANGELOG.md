@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`signInErrorPath` sends a failed OIDC sign-in to a page your app can show.**
+  The identity provider redirects the browser to the callback, so an error
+  answered as JSON became the whole page, with no way back to sign-in. With
+  `signInErrorPath: '/sign-in'`, a failure at `oidcStart` or `oidcCallback`
+  redirects to `/sign-in?error=<CODE>` (for example `EMAIL_DOMAIN_NOT_VERIFIED`
+  or `INVALID_LOGIN_STATE`) and clears the login-state cookie. Only the code is
+  sent, never the domain or tenant. The login-state cookie is cleared only when
+  the callback carried a valid one, so a forged request can't cancel a sign-in in
+  progress. The path must be on your own site, and `createAuthHandlers` throws
+  otherwise. Without it, failures are answered as JSON, as before.
+- **`MethodHandler.resolveUser`**, optional: the user `complete` would resolve
+  for an identifier, without sending anything. `twilioVerifyHandler` and
+  `emailCodeHandler` implement it. If you dispatch between handlers yourself,
+  forward it too (the README's dispatch example shows how).
+
 ### Changed
 
 - **Breaking: writing to an auth table without an actor now fails.** auth now
@@ -24,6 +41,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   package manager warns at install time if yours is older. The setting applies only while schema-flow writes seed rows; auth
   still attributes those rows to its `app-init` user before the columns become
   required.
+
+### Security
+
+- **No code is sent to someone who has to sign in with SSO.** `initiateOtp` checked only the domain of what was typed, so a phone
+  number, or an email at another domain, of a user whose email is at an
+  SSO-required domain got a real code, which `completeOtp` then refused. With a
+  handler that implements `resolveUser`, it now reaches the same verdict before
+  sending, and answers with the same `{ otpSent: true }` as for an unknown
+  identifier, so the response doesn't reveal whose a phone number is. The user
+  sees "code sent" and no code arrives, so tell people at an SSO-required domain
+  to use their organization's sign-in. Both built-in handlers implement
+  `resolveUser`. A custom handler without it, including a dispatcher that
+  doesn't forward it, still sends the code.
 
 ## [11.1.0] - 2026-10-24
 

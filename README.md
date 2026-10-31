@@ -289,6 +289,9 @@ const pick = (identifier: string) => (identifier.includes('@') ? email : sms);
 const otpHandler: MethodHandler = {
   initiate: (ctx) => pick(ctx.identifier).initiate(ctx),
   complete: (ctx) => pick(ctx.identifier).complete(ctx),
+  // Forward this too: the router uses it to send no code to someone who must
+  // sign in with SSO. Leave it out and that check is lost for both channels.
+  resolveUser: async (ctx) => (await pick(ctx.identifier).resolveUser?.(ctx)) ?? null,
 };
 ```
 
