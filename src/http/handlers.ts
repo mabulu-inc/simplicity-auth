@@ -109,7 +109,9 @@ function requireString(body: Record<string, unknown>, key: string): string {
 function toErrorResponse(err: unknown): Response {
   if (err instanceof InvalidInputError) return json({ error: err.message, code: err.code }, 400);
   if (err instanceof OtpNotAllowedError) return json({ error: 'OTP sign-in is not allowed', code: err.code }, 403);
-  if (err instanceof SsoRequiredError) return json({ error: 'Sign in with your organization', code: err.code }, 403);
+  if (err instanceof SsoRequiredError) {
+    return json({ error: 'Sign in with your organization', code: err.code, domain: err.domain }, 403);
+  }
   if (err instanceof EmailDomainNotVerifiedError) {
     return json({ error: 'This organization has not verified that email domain', code: err.code }, 403);
   }
@@ -155,7 +157,11 @@ export function createAuthHandlers(config: AuthHttpConfig): AuthHandlers {
     throw new Error(`signInErrorPath must be a path on this site, got ${JSON.stringify(config.signInErrorPath)}`);
   }
   const pool: Pool = config.pool;
-  const router = createMethodRouter({ db: pool, otpHandler: config.otpHandler });
+  const router = createMethodRouter({
+    db: pool,
+    otpHandler: config.otpHandler,
+    revealSsoRequiredUsers: config.revealSsoRequiredUsers,
+  });
   const sessionTtl = config.sessionTtl ?? DEFAULT_SESSION_TTL;
   const loginStateTtl = config.loginStateTtlSeconds ?? DEFAULT_LOGIN_STATE_TTL;
   const loginStateCookieName = `${config.cookie.name}_oidc`;
@@ -246,6 +252,7 @@ export function createAuthHandlers(config: AuthHttpConfig): AuthHandlers {
         return json({
           tenantId: opts.tenantId,
           otpAllowed: opts.otpAllowed,
+          ssoRequired: opts.ssoRequired,
           authDomains: opts.authDomains.map((d) => ({
             authDomainId: d.authDomainId,
             displayName: d.displayName,

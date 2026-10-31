@@ -60,3 +60,19 @@ export async function ssoRequiredDomainForUser(db: Queryable, userId: number): P
     rows.map((r) => r.domain).filter((d): d is string => !!d),
   );
 }
+
+const SELECT_TENANT_REQUIRES_SSO = `
+  SELECT 1
+  FROM tenant_email_domains
+  WHERE tenant_id = $1
+    AND sso_required
+    AND verified_at IS NOT NULL
+    AND deleted_at IS NULL
+  LIMIT 1
+`;
+
+/** Whether `tenantId` has a verified domain that requires SSO. */
+export async function tenantRequiresSso(db: Queryable, tenantId: number): Promise<boolean> {
+  const { rows } = await db.query(SELECT_TENANT_REQUIRES_SSO, [tenantId]);
+  return rows.length > 0;
+}

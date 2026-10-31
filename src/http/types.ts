@@ -52,6 +52,9 @@ export interface AuthHttpConfig {
   /** The user-bound code handler: one for every identifier (e.g. `twilioVerifyHandler`),
    *  or one per kind, `{ email, phone }`. Omit for SSO-only. */
   otpHandler?: MethodHandler | OtpHandlers;
+  /** Refuse a phone, or an address at another domain, whose owner must use SSO, as
+   *  `403 SSO_REQUIRED` instead of a silent "code sent". See `MethodRouterOptions`. */
+  revealSsoRequiredUsers?: boolean;
   /** The app's own rules around a sign-in. See {@link SignInHooks}. */
   signIn?: SignInHooks;
   /** The org-bound OIDC handler (`oidcHandler` from `@smplcty/auth/oidc`). Omit if the app has no OIDC. */

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A sign-in screen can tell a tenant requires SSO.** `signInOptions` (and
+  `GET /auth/sign-in/options`) now report `ssoRequired: true` for a tenant with
+  a verified email domain that requires SSO, so that tenant's sub-domain can
+  offer only its own sign-in.
+- **Optionally tell people who must use SSO, even by phone.** With
+  `revealSsoRequiredUsers: true`, a phone number or an address at another domain
+  whose owner must use SSO is refused with `SSO_REQUIRED`, naming the domain,
+  instead of a silent "code sent" that never arrives. It's off by default,
+  because it reveals whether a phone number belongs to someone who must use SSO.
+  The `403 SSO_REQUIRED` response now includes that `domain`.
+
 ## [12.0.1] - 2026-10-31
 
 ### Fixed

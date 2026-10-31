@@ -25,7 +25,7 @@ const oidc = oidcHandler({ clientSecret: (ad) => secrets.get(ad.tenantId) });
 
 // Sign-in page — app parsed Host → 'acme':
 const opts = await router.signInOptions({ tenantSlug: 'acme' });
-// opts = { tenantId, authDomains: AuthDomain[], otpAllowed: boolean }
+// opts = { tenantId, authDomains: AuthDomain[], otpAllowed: boolean, ssoRequired: boolean }
 ```
 
 ## Two paths
