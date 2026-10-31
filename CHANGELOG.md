@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [12.0.0] - 2026-10-31
+
 ### Added
 
 - **Tenant admins set up their own SSO credentials.** Each auth domain now
@@ -708,7 +710,8 @@ Baseline release. Notes for this and earlier versions are on the
 [GitHub releases page](https://github.com/mabulu-inc/simplicity-auth/releases);
 the Keep a Changelog history starts from the next release.
 
-[Unreleased]: https://github.com/mabulu-inc/simplicity-auth/compare/v11.1.0...HEAD
+[Unreleased]: https://github.com/mabulu-inc/simplicity-auth/compare/v12.0.0...HEAD
+[12.0.0]: https://github.com/mabulu-inc/simplicity-auth/compare/v11.1.0...v12.0.0
 [11.1.0]: https://github.com/mabulu-inc/simplicity-auth/compare/v11.0.0...v11.1.0
 [11.0.0]: https://github.com/mabulu-inc/simplicity-auth/compare/v10.0.0...v11.0.0
 [10.0.0]: https://github.com/mabulu-inc/simplicity-auth/compare/v9.0.2...v10.0.0
