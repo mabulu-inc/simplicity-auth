@@ -133,6 +133,10 @@ export function emailCodeHandler(options: EmailCodeHandlerOptions): MethodHandle
     createHmac('sha256', codeSecret).update(`${userCommunicationMethodId}:${code}`).digest();
 
   return {
+    async resolveUser(ctx: MethodInitiateContext): Promise<ResolvedUser | null> {
+      return findUser(ctx.db, requireIdentifier(ctx.identifier));
+    },
+
     async initiate(ctx: MethodInitiateContext): Promise<MethodInitiateResult> {
       const identifier = requireIdentifier(ctx.identifier);
       const user = await findUser(ctx.db, identifier);

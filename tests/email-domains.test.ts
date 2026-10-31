@@ -9,6 +9,7 @@ import {
 } from '../src/index.js';
 import { emailDomainVerifier, type ResolveTxt } from '../src/email-domains/index.js';
 import { twilioVerifyHandler } from '../src/methods/twilio/index.js';
+import { emailCodeHandler } from '../src/methods/email-code/index.js';
 import { seedVerifiedDomain } from './helpers/email-domains.js';
 import { startTestDb, type TestDb } from './helpers/test-db.js';
 
@@ -310,7 +311,7 @@ describe('a verified domain that requires SSO closes code sign-in everywhere', (
       await expect(signIn('+15555550100')).rejects.toBeInstanceOf(SsoRequiredError);
     });
 
-    describe('through the Twilio handler', () => {
+    describe('through the built-in handlers', () => {
       const sent: string[] = [];
       const twilio = () =>
         createMethodRouter({
@@ -361,6 +362,59 @@ describe('a verified domain that requires SSO closes code sign-in everywhere', (
         await twilio().initiateOtp({ identifier: '+15555550122' });
 
         expect(sent).toEqual(['+15555550122']);
+      });
+
+      const emailed: string[] = [];
+      const emailCode = () =>
+        emailCodeHandler({
+          codeSecret: 'x'.repeat(32),
+          async sendCode({ to }) {
+            emailed.push(to);
+          },
+        });
+
+      it('emailCodeHandler sends no code to an acme.com user by her email at another domain', async () => {
+        emailed.length = 0;
+        const router = createMethodRouter({ db: db.pool, otpHandler: emailCode() });
+        const unknown = await router.initiateOtp({ identifier: 'nobody@personal.example' });
+
+        const result = await router.initiateOtp({ identifier: 'alice@personal.example' });
+
+        expect(emailed).toEqual([]);
+        expect(result).toEqual(unknown);
+      });
+
+      // The README's dispatch example: one handler per identifier kind, with
+      // resolveUser forwarded. Without the forward the router can't see the
+      // user, and the SSO check is lost for both channels.
+      it('a dispatching handler that forwards resolveUser keeps the check for both channels', async () => {
+        sent.length = 0;
+        emailed.length = 0;
+        const email = emailCode();
+        const sms = twilioVerifyHandler({
+          client: {
+            async sendVerificationCode({ to }) {
+              sent.push(to);
+              return true;
+            },
+            async verifyVerificationCode() {
+              return true;
+            },
+          },
+        });
+        const pick = (identifier: string) => (identifier.includes('@') ? email : sms);
+        const otpHandler: MethodHandler = {
+          initiate: (ctx) => pick(ctx.identifier).initiate(ctx),
+          complete: (ctx) => pick(ctx.identifier).complete(ctx),
+          resolveUser: async (ctx) => (await pick(ctx.identifier).resolveUser?.(ctx)) ?? null,
+        };
+        const router = createMethodRouter({ db: db.pool, otpHandler });
+
+        await router.initiateOtp({ identifier: '+15555550111' });
+        await router.initiateOtp({ identifier: 'alice@personal.example' });
+
+        expect(sent).toEqual([]);
+        expect(emailed).toEqual([]);
       });
     });
 
