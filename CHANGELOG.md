@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Installing auth no longer pulls in an `otplib` released the same day.**
+  12.0.0 required `otplib` 13.6.0, published hours before auth, though auth
+  needs nothing from it. A package manager that holds back brand-new releases
+  for a cooldown (pnpm 11 does, for a day, by default) then had to exempt
+  `otplib` and six of its packages to install auth. auth now accepts 13.5.0 or
+  later and is tested against 13.5.0.
+
 ## [12.0.0] - 2026-10-31
 
 ### Added
