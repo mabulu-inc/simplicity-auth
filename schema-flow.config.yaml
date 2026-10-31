@@ -7,6 +7,13 @@ default:
   connectionString: ${DATABASE_URL}
   pgSchema: public
 
+  # Seeds run with no request actor, and @smplcty/schema-std's audit_stamp
+  # refuses actor-less writes. This lets auth's seeds through with created_by /
+  # updated_by left NULL; the back-fill below then attributes them to app-init.
+  # schema-flow sets it only in the transactions that write seeds.
+  bootstrapSession:
+    app.audit_lenient: true
+
   # Generic, parameterized mixins (audit / soft_delete / timestamps /
   # audit_log) come from @smplcty/schema-std — auth consumes them like any
   # app, supplying its own identity table + actor GUC. Defaults already match
@@ -20,7 +27,8 @@ default:
         actor_guc: app.actor_id
 
 # The audit triggers stamp created_by/updated_by from app.actor_id, but rows
-# seeded *during* a migration have no request actor, so they land NULL.
+# seeded *during* a migration have no request actor, so (with the lenient
+# setting above) they land NULL.
 # schema-flow seeds tables in an order that doesn't account for the audit FK,
 # so a single pre-set actor would stamp some tables before app-init exists.
 # Instead, auth ships schema/post/0001-backfill-audit-by.sql, which calls
