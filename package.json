@@ -103,13 +103,17 @@
   "peerDependencies": {
     "@smplcty/twilio": ">=0.1.0",
     "oauth4webapi": ">=3.0.0",
-    "pg": ">=8.0.0"
+    "pg": ">=8.0.0",
+    "@smplcty/schema-flow": ">=0.25.0"
   },
   "peerDependenciesMeta": {
     "@smplcty/twilio": {
       "optional": true
     },
     "oauth4webapi": {
+      "optional": true
+    },
+    "@smplcty/schema-flow": {
       "optional": true
     }
   },
@@ -134,7 +138,7 @@
   },
   "dependencies": {
     "@smplcty/db": "^4.3.0",
-    "@smplcty/schema-std": "^0.0.1",
+    "@smplcty/schema-std": "^0.1.0",
     "otplib": "^13.6.0"
   }
 }

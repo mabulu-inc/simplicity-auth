@@ -12,8 +12,8 @@ importers:
         specifier: ^4.3.0
         version: 4.3.0(pg@8.23.1)
       '@smplcty/schema-std':
-        specifier: ^0.0.1
-        version: 0.0.1
+        specifier: ^0.1.0
+        version: 0.1.0
       otplib:
         specifier: ^13.6.0
         version: 13.6.0
@@ -588,8 +588,8 @@ packages:
     engines: {node: '>=22'}
     hasBin: true
 
-  '@smplcty/schema-std@0.0.1':
-    resolution: {integrity: sha512-EwlZw5a7+ue4RWNlGGq6tVvaJpuiyGJ3w+MNNA7ovGPAnA7VmGoIUVp/q8I13WsalRzq6cvs/DV5qflxNR3FGA==}
+  '@smplcty/schema-std@0.1.0':
+    resolution: {integrity: sha512-34H0jCZWIffsVg+tHjOkQz3W7V5b2GFmk2ygKvRyNW7IJQmTr53dE3a5gYGeraJVSPWLTO3qhPHa9L7F7w+xBw==}
     engines: {node: '>=20'}
 
   '@smplcty/twilio@0.1.1':
@@ -2480,7 +2480,7 @@ snapshots:
     transitivePeerDependencies:
       - pg-native
 
-  '@smplcty/schema-std@0.0.1': {}
+  '@smplcty/schema-std@0.1.0': {}
 
   '@smplcty/twilio@0.1.1': {}
 
