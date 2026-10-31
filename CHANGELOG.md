@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking: writing to an auth table without an actor now fails.** auth now
+  uses `@smplcty/schema-std` 0.1, whose audit trigger refuses an insert or
+  update when `app.actor_id` is not set, with
+  `audit_stamp: app.actor_id is not set; refusing to write to <table>`. Before,
+  such a write could save with no record of who made it. If any of your code
+  writes to auth's tables outside a session or service context, give it one
+  (for example `withSession` or `withServiceContext`) before upgrading.
+- **Breaking: your schema-flow config needs one new setting.** Add
+  `bootstrapSession: { app.audit_lenient: true }` under `default:` (see the
+  reference `schema-flow.config.yaml`), and upgrade `@smplcty/schema-flow` to
+  0.25.0 or later. Without both, the migration stops at auth's first seeded
+  table. auth now lists schema-flow as an optional peer dependency, so your
+  package manager warns at install time if yours is older. The setting applies only while schema-flow writes seed rows; auth
+  still attributes those rows to its `app-init` user before the columns become
+  required.
+
 ## [11.1.0] - 2026-10-24
 
 ### Added
