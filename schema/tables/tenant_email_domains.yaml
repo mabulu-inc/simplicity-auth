@@ -68,14 +68,18 @@ indexes:
   - columns: [domain]
     where: 'verified_at IS NOT NULL AND deleted_at IS NULL'
     name: tenant_email_domains_verified_domain_idx
-# RLS. A settings concern, like auth_domains: a settings admin sees and
-# maintains the email domains of the tenants they have settings access to. The
-# sign-in checks read this table through the privileged pool, pre-session.
+# RLS. Part of setting up SSO, like auth_domains: a security or settings admin
+# sees and maintains the email domains (and sso_required) of the tenants they
+# hold either role for. Verifying a domain stays out of their reach through the
+# column grants above. The sign-in checks read this table through the
+# privileged pool, pre-session.
 rls: true
 policies:
+  # The policy keeps its original name, from when only settings admins were admitted:
+  # renaming it would leave the old policy behind as a blocked destructive drop.
   - name: tenant_email_domains_settings
     for: ALL
     to: app_rls
     permissive: true
-    using: auth_has_role('settings', tenant_email_domains.tenant_id)
-    check: auth_has_role('settings', tenant_email_domains.tenant_id)
+    using: auth_has_role('security', tenant_email_domains.tenant_id) OR auth_has_role('settings', tenant_email_domains.tenant_id)
+    check: auth_has_role('security', tenant_email_domains.tenant_id) OR auth_has_role('settings', tenant_email_domains.tenant_id)

@@ -5,12 +5,34 @@ import { emailDomainOf, tenantHasVerifiedDomain } from '../../internal/email-dom
 import type { Queryable } from '../../types.js';
 import { EmailDomainNotVerifiedError, VerificationFailedError } from '../errors.js';
 import type { AuthDomain, ResolvedUser } from '../types.js';
+import { loadClientKey, loadClientSecret, type CredentialCipher } from './credentials.js';
+
+export {
+  generateClientKey,
+  getClientCredentialStatus,
+  setClientSecret,
+  type ClientCredentialStatus,
+  type ClientPublicKey,
+  type CredentialCipher,
+  type CredentialContext,
+} from './credentials.js';
+
+/** How the client authenticates at the token endpoint (OIDC registration's `token_endpoint_auth_method`). */
+export type TokenEndpointAuthMethod = 'none' | 'client_secret_basic' | 'client_secret_post' | 'private_key_jwt';
+
+const TOKEN_ENDPOINT_AUTH_METHODS: readonly TokenEndpointAuthMethod[] = [
+  'none',
+  'client_secret_basic',
+  'client_secret_post',
+  'private_key_jwt',
+];
 
 /**
  * The OIDC provider config read from `auth_domains.integration_params`.
- * Public values only — the `client_secret` is supplied out-of-band via
- * {@link OidcHandlerOptions.clientSecret} (from the app's secret store), never
- * stored here.
+ * Public values only. The client's credential never goes here: it is stored
+ * encrypted in `auth_domain_credentials` (see {@link setClientSecret} and
+ * {@link generateClientKey}), or supplied by the app's
+ * {@link OidcHandlerOptions.clientSecret} resolver.
  */
 export interface OidcParams {
   /** Provider issuer URL (discovery is fetched from `${issuer}/.well-known/openid-configuration`). */
@@ -21,6 +43,13 @@ export interface OidcParams {
   redirectUri: string;
   /** OAuth scope. Defaults to `openid email profile`. */
   scope?: string;
+  /**
+   * How the client authenticates at the token endpoint; only this method is
+   * ever sent, and a failure is never retried with another. Leave it out to
+   * keep the behavior from before it existed: `client_secret_post` when the
+   * {@link OidcHandlerOptions.clientSecret} resolver returns a secret, else none.
+   */
+  tokenEndpointAuthMethod?: TokenEndpointAuthMethod;
 }
 
 /**
@@ -44,11 +73,18 @@ export interface OidcAuthorization {
 
 export interface OidcHandlerOptions {
   /**
-   * Resolve the confidential client secret for an `auth_domains` row, from the
-   * app's secret store (Vercel/SSM) — NOT from the database. Return `undefined`
-   * for a public (PKCE-only) client.
+   * Resolve a client secret the app holds itself, from its own secret store.
+   * When it returns a secret, that secret is used, ahead of one stored with
+   * {@link setClientSecret}; return `undefined` to fall back to the stored one.
    */
   clientSecret?: (authDomain: AuthDomain<OidcParams>) => string | undefined | Promise<string | undefined>;
+  /**
+   * Decrypts credentials stored with {@link setClientSecret} and
+   * {@link generateClientKey} (the same cipher that encrypted them). Each is
+   * read and decrypted on every sign-in, never cached, so a replaced credential
+   * takes effect on the next one.
+   */
+  cipher?: CredentialCipher;
   /**
    * Provision a user when a verified identity has no existing communication
    * method. The app owns the writes + audit attribution (it knows the tenant
@@ -86,7 +122,7 @@ type ValidatedClaims = NonNullable<ReturnType<typeof oauth.getValidatedIdTokenCl
  * this is an authentication-authority boundary, not a scope boundary.
  *
  * ```ts
- * const oidc = oidcHandler({ clientSecret: (ad) => secrets.get(ad.tenantId) });
+ * const oidc = oidcHandler({ cipher }); // or clientSecret: (ad) => secrets.get(ad.tenantId)
  * const { redirectUrl, loginState } = await oidc.initiate(authDomain);
  * // ...store loginState in a signed cookie keyed by loginState.state, redirect...
  * const user = await oidc.complete({ db: pool, authDomain, callbackUrl, loginState });
@@ -112,7 +148,52 @@ function paramsOf(authDomain: AuthDomain<Partial<OidcParams>>): OidcParams {
   if (!p.issuer || !p.clientId || !p.redirectUri) {
     throw new InvalidInputError('OIDC integration_params must include issuer, clientId, and redirectUri');
   }
+  if (p.tokenEndpointAuthMethod !== undefined && !TOKEN_ENDPOINT_AUTH_METHODS.includes(p.tokenEndpointAuthMethod)) {
+    throw new InvalidInputError(
+      `OIDC tokenEndpointAuthMethod must be one of ${TOKEN_ENDPOINT_AUTH_METHODS.join(', ')}, got ${JSON.stringify(p.tokenEndpointAuthMethod)}`,
+    );
+  }
   return p as OidcParams;
+}
+
+/**
+ * The client authentication for this exchange: the auth domain's declared
+ * method and nothing else, with its credential read and decrypted now.
+ */
+async function clientAuthFor(
+  db: Queryable,
+  authDomain: AuthDomain<OidcParams>,
+  params: OidcParams,
+  as: oauth.AuthorizationServer,
+  options: OidcHandlerOptions,
+): Promise<oauth.ClientAuth> {
+  const method = params.tokenEndpointAuthMethod;
+  const id = authDomain.authDomainId;
+  if (method === undefined) {
+    const secret = options.clientSecret ? await options.clientSecret(authDomain) : undefined;
+    return secret ? oauth.ClientSecretPost(secret) : oauth.None();
+  }
+  if (method === 'none') return oauth.None();
+  if (method === 'private_key_jwt') {
+    const stored = await loadClientKey(db, id, options.cipher);
+    if (!stored) throw new InvalidInputError(`auth domain ${id} uses private_key_jwt but has no key; generate one`);
+    return oauth.PrivateKeyJwt(
+      { key: stored.key, kid: stored.x5tS256 },
+      {
+        // Entra identifies the certificate by thumbprint, not kid, and wants the
+        // token endpoint as the audience; oauth4webapi defaults aud to the issuer.
+        [oauth.modifyAssertion]: (header, payload) => {
+          Object.assign(header, { 'x5t#S256': stored.x5tS256, x5t: stored.x5t });
+          if (as.token_endpoint) payload.aud = as.token_endpoint;
+        },
+      },
+    );
+  }
+  const secret =
+    (options.clientSecret ? await options.clientSecret(authDomain) : undefined) ??
+    (await loadClientSecret(db, id, options.cipher));
+  if (!secret) throw new InvalidInputError(`auth domain ${id} uses ${method} but has no client secret; set one`);
+  return method === 'client_secret_basic' ? oauth.ClientSecretBasic(secret) : oauth.ClientSecretPost(secret);
 }
 
 // Discovery is cached per issuer for the process lifetime (warm-start friendly).
@@ -167,8 +248,7 @@ export function oidcHandler(options: OidcHandlerOptions = {}): OidcHandler {
       const params = paramsOf(authDomain);
       const as = await authorizationServer(params.issuer, options.fetch);
       const client: oauth.Client = { client_id: params.clientId };
-      const secret = options.clientSecret ? await options.clientSecret(authDomain) : undefined;
-      const clientAuth = secret ? oauth.ClientSecretPost(secret) : oauth.None();
+      const clientAuth = await clientAuthFor(db, authDomain, params, as, options);
       const currentUrl = typeof callbackUrl === 'string' ? new URL(callbackUrl) : callbackUrl;
       const fetchOption = options.fetch ? { [oauth.customFetch]: options.fetch } : undefined;
 

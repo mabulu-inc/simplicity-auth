@@ -48,8 +48,8 @@ const handlers = createAuthHandlers({
   tenantSlugFromRequest: (req) => new URL(req.url).hostname.split('.')[0] ?? null,
   // Opt-in user-bound OTP. Omit for an SSO-only product.
   otpHandler: twilioVerifyHandler({ client: createTwilioVerifyClient(twilioCfg) }),
-  // Opt-in org-bound OIDC. The client secret comes from YOUR secret store, never the DB.
-  oidc: oidcHandler({ clientSecret: (ad) => secrets.get(ad.tenantId) }),
+  // Opt-in org-bound OIDC. The cipher decrypts each auth domain's stored client credential.
+  oidc: oidcHandler({ cipher }),
 });
 ```
 
