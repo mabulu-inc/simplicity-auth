@@ -61,3 +61,20 @@ export class SsoRequiredError extends AuthError {
     this.domain = domain;
   }
 }
+
+/**
+ * Thrown by an app's sign-in hook to refuse a sign-in, e.g. a verified user
+ * with no live role in an active workspace. The message is the app's and is
+ * what the person sees. `code` defaults to `SIGN_IN_REFUSED`; on an OIDC
+ * sign-in with `signInErrorPath`, only the code reaches the page, so pass your
+ * own code when the page needs to tell refusals apart.
+ */
+export class SignInRefusedError extends AuthError {
+  override readonly name = 'SignInRefusedError';
+  override readonly code: string;
+
+  constructor(message: string, code: string = 'SIGN_IN_REFUSED') {
+    super(message);
+    this.code = code;
+  }
+}

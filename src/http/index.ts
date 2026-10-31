@@ -18,4 +18,11 @@ export {
   type SerializeCookieOptions,
   type LoginState,
 } from './cookies.js';
-export type { AuthHttpConfig, AuthCookieConfig, AuthHandlers, RequestSessionMeta } from './types.js';
+export type {
+  AuthHttpConfig,
+  AuthCookieConfig,
+  AuthHandlers,
+  RequestSessionMeta,
+  SignInHooks,
+  SignInMethod,
+} from './types.js';

@@ -4,12 +4,18 @@ import type { Queryable } from '../types.js';
 import { OtpNotAllowedError, SsoRequiredError } from './errors.js';
 import type {
   AuthDomain,
+  IdentifierKind,
   MethodHandler,
   MethodRouter,
   MethodRouterOptions,
   ResolvedUser,
   SignInOptions,
 } from './types.js';
+
+/** An identifier containing `@` is an email; anything else is a phone. */
+export function identifierKind(identifier: string): IdentifierKind {
+  return identifier.includes('@') ? 'email' : 'phone';
+}
 
 const SELECT_TENANT_BY_SLUG = `
   SELECT tenant_id AS "tenantId"
@@ -55,10 +61,16 @@ interface TenantRow {
 export function createMethodRouter(options: MethodRouterOptions): MethodRouter {
   const { otpHandler } = options;
   const q = options.db as Queryable;
+  const otpAllowed = !!otpHandler && ('initiate' in otpHandler || !!(otpHandler.email || otpHandler.phone));
 
-  function requireOtpHandler(): MethodHandler {
+  /** The handler for this identifier: the single one, or the one for its kind. */
+  function handlerFor(identifier: string): MethodHandler {
     if (!otpHandler) throw new OtpNotAllowedError('No OTP handler is configured');
-    return otpHandler;
+    if ('initiate' in otpHandler) return otpHandler;
+    const kind = identifierKind(identifier);
+    const handler = otpHandler[kind];
+    if (!handler) throw new OtpNotAllowedError(`Code sign-in by ${kind} is not offered`);
+    return handler;
   }
 
   return {
@@ -80,7 +92,7 @@ export function createMethodRouter(options: MethodRouterOptions): MethodRouter {
           authDomainId: Number(d.authDomainId),
           tenantId: Number(d.tenantId),
         })),
-        otpAllowed: !!otpHandler,
+        otpAllowed,
       };
     },
 
@@ -88,7 +100,7 @@ export function createMethodRouter(options: MethodRouterOptions): MethodRouter {
       if (typeof identifier !== 'string' || identifier.length === 0) {
         throw new InvalidInputError('identifier must be a non-empty string');
       }
-      const handler = requireOtpHandler();
+      const handler = handlerFor(identifier);
       // Don't send a code to an address that could never use it.
       const domain = emailDomainOf(identifier);
       const required = domain ? await ssoRequiredDomain(q, [domain]) : null;
@@ -107,7 +119,7 @@ export function createMethodRouter(options: MethodRouterOptions): MethodRouter {
       if (typeof credential !== 'string' || credential.length === 0) {
         throw new InvalidInputError('credential must be a non-empty string');
       }
-      const user = await requireOtpHandler().complete({ db: options.db, identifier, credential });
+      const user = await handlerFor(identifier).complete({ db: options.db, identifier, credential });
       // Checked on the resolved user, not just the identifier: someone whose
       // email is at an SSO-required domain can't sign in by phone either.
       const required = await ssoRequiredDomainForUser(q, user.userId);
