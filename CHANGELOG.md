@@ -20,21 +20,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   progress. The path must be on your own site, and `createAuthHandlers` throws
   otherwise. Without it, failures are answered as JSON, as before.
 - **`MethodHandler.resolveUser`**, optional: the user `complete` would resolve
-  for an identifier, without sending anything. `twilioVerifyHandler` implements
-  it.
+  for an identifier, without sending anything. `twilioVerifyHandler` and
+  `emailCodeHandler` implement it. If you dispatch between handlers yourself,
+  forward it too (the README's dispatch example shows how).
+
+### Changed
+
+- **Breaking: writing to an auth table without an actor now fails.** auth now
+  uses `@smplcty/schema-std` 0.1, whose audit trigger refuses an insert or
+  update when `app.actor_id` is not set, with
+  `audit_stamp: app.actor_id is not set; refusing to write to <table>`. Before,
+  such a write could save with no record of who made it. If any of your code
+  writes to auth's tables outside a session or service context, give it one
+  (for example `withSession` or `withServiceContext`) before upgrading.
+- **Breaking: your schema-flow config needs one new setting.** Add
+  `bootstrapSession: { app.audit_lenient: true }` under `default:` (see the
+  reference `schema-flow.config.yaml`), and upgrade `@smplcty/schema-flow` to
+  0.25.0 or later. Without both, the migration stops at auth's first seeded
+  table. auth now lists schema-flow as an optional peer dependency, so your
+  package manager warns at install time if yours is older. The setting applies only while schema-flow writes seed rows; auth
+  still attributes those rows to its `app-init` user before the columns become
+  required.
 
 ### Security
 
-- **`twilioVerifyHandler` sends no code to someone who has to sign in with
-  SSO.** `initiateOtp` checked only the domain of what was typed, so a phone
+- **No code is sent to someone who has to sign in with SSO.** `initiateOtp` checked only the domain of what was typed, so a phone
   number, or an email at another domain, of a user whose email is at an
   SSO-required domain got a real code, which `completeOtp` then refused. With a
   handler that implements `resolveUser`, it now reaches the same verdict before
   sending, and answers with the same `{ otpSent: true }` as for an unknown
   identifier, so the response doesn't reveal whose a phone number is. The user
   sees "code sent" and no code arrives, so tell people at an SSO-required domain
-  to use their organization's sign-in. A custom handler without `resolveUser`
-  still sends the code.
+  to use their organization's sign-in. Both built-in handlers implement
+  `resolveUser`. A custom handler without it, including a dispatcher that
+  doesn't forward it, still sends the code.
+
+## [11.1.0] - 2026-10-24
+
+### Added
+
+- **Sign in with a code you email yourself.** `emailCodeHandler`
+  (`@smplcty/auth/email-code`) issues and checks a one-time code, and hands it
+  to your `sendCode` to deliver through Amazon SES or any other provider, so
+  email sign-in no longer depends on Twilio Verify and SendGrid. A code lasts
+  10 minutes, works once, dies after 5 wrong guesses and is retired by the next
+  code sent; an address gets at most 5 codes in 10 minutes. Only an HMAC of
+  each code is stored, in the new `email_sign_in_codes` table, so run your
+  schema migration when you upgrade.
 
 ## [11.0.0] - 2026-10-20
 
@@ -620,7 +652,8 @@ Baseline release. Notes for this and earlier versions are on the
 [GitHub releases page](https://github.com/mabulu-inc/simplicity-auth/releases);
 the Keep a Changelog history starts from the next release.
 
-[Unreleased]: https://github.com/mabulu-inc/simplicity-auth/compare/v11.0.0...HEAD
+[Unreleased]: https://github.com/mabulu-inc/simplicity-auth/compare/v11.1.0...HEAD
+[11.1.0]: https://github.com/mabulu-inc/simplicity-auth/compare/v11.0.0...v11.1.0
 [11.0.0]: https://github.com/mabulu-inc/simplicity-auth/compare/v10.0.0...v11.0.0
 [10.0.0]: https://github.com/mabulu-inc/simplicity-auth/compare/v9.0.2...v10.0.0
 [9.0.2]: https://github.com/mabulu-inc/simplicity-auth/compare/v9.0.1...v9.0.2

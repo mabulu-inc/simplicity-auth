@@ -252,6 +252,46 @@ Auth **core** depends on neither `oauth4webapi` nor Twilio — the handler subpa
 
 **What stays app-side:** parsing the request `Host` → slug, the chooser/redirect UI, and the OIDC **login-state store** — `oidc.initiate` returns `loginState` (`state`/`nonce`/`codeVerifier`) for you to persist in a short-lived signed cookie keyed by `state`, and hand back to `oidc.complete`. The **`client_secret`** lives in your secret store (passed via the `clientSecret` resolver), **not** in `auth_domains` (which holds only `issuer`/`clientId`). The [`@smplcty/auth/http`](#http-transport--smpltyauthhttp) tier handles the routes, cookies, and login-state store for you — drop it in and you write only the slug parser + the sign-in screen.
 
+### Emailed codes — `@smplcty/auth/email-code`
+
+`emailCodeHandler` (`@smplcty/auth/email-code`) signs users in with a code you
+email them. The library issues, stores and checks the code; you deliver it with
+`sendCode`, through Amazon SES or any other provider, so auth depends on no mail
+provider. It is the alternative to Twilio Verify's email channel, which works
+only through SendGrid.
+
+```ts
+import { emailCodeHandler } from '@smplcty/auth/email-code';
+
+const otpHandler = emailCodeHandler({
+  codeSecret: process.env.EMAIL_CODE_SECRET, // at least 32 bytes, never in the database
+  sendCode: ({ to, code }) => sendSignInEmail(to, code), // your message, your provider
+});
+```
+
+What it enforces, which Twilio Verify would otherwise do for you:
+
+- A code is six random digits and is valid for **10 minutes**.
+- A code works **once**, and dies after **5 wrong guesses**, even if the next one is right.
+- Sending a new code **retires the previous one** for good.
+- At most **5 codes per address per 10 minutes**. A request over the limit sends nothing and the last code stays valid.
+- Only an **HMAC** of each code is stored (`email_sign_in_codes`), keyed by `codeSecret`, so a database read alone can't brute-force the million possible codes. Rows are kept after use, expiry or replacement.
+- Like the Twilio handler, it never provisions, reports `otpSent` for an unknown address without sending, and accepts a [dev-OTP](#developer-otp--for-devs-whose-phones-cant-receive-sms) code first, sending nothing to an enrolled user.
+
+The router takes one `otpHandler`. To send email codes yourself and SMS through
+Twilio, pick the handler by identifier:
+
+```ts
+const email = emailCodeHandler({ codeSecret, sendCode });
+const sms = twilioVerifyHandler({ client });
+const pick = (identifier: string) => (identifier.includes('@') ? email : sms);
+
+const otpHandler: MethodHandler = {
+  initiate: (ctx) => pick(ctx.identifier).initiate(ctx),
+  complete: (ctx) => pick(ctx.identifier).complete(ctx),
+};
+```
+
 ## HTTP transport — `@smplcty/auth/http`
 
 The pieces above are primitives. **`@smplcty/auth/http`** wires them into
@@ -487,7 +527,8 @@ The library ships its schema as schema-flow YAML inside the package at `@smplcty
 │   ├── user_communication_methods.yaml  # + audit; qualifier (optional consumer-defined label)
 │   ├── auth_domains.yaml                 # + audit; tenant's IdP(s), 1:N, resolved by id (display_name = button)
 │   ├── sessions.yaml                     # PK = token hash; last_seen_at; geo
-│   └── dev_otp_enrollments.yaml
+│   ├── dev_otp_enrollments.yaml
+│   └── email_sign_in_codes.yaml          # emailCodeHandler's codes: HMAC only, never deleted
 ├── functions/
 │   ├── resolve_session.yaml              # pure resolver (SECURITY DEFINER)
 │   └── current_user_id.yaml              # reads app.actor_id
@@ -497,7 +538,7 @@ The library ships its schema as schema-flow YAML inside the package at `@smplcty
 
 ### Consuming with [`@smplcty/schema-flow`](https://www.npmjs.com/package/@smplcty/schema-flow)
 
-Requires **`@smplcty/schema-flow >= 0.21.1`** — the shipped seeds assign no primary keys (the app-init user and the standard roles are matched by their natural keys, `name`/`kind`) and rely on insert-only seeding, where an existing row is never overwritten. `0.13.0` makes insert-only the default (the old per-table `seeds_on_conflict` knob is gone); on older versions these seeds would upsert and clobber any consumer edits to the standard roles on every migration. `0.14.0` is required so `resolve_session` converges: it canonicalizes function type aliases (`resolve_session` returns a `TABLE(… expires_at timestamptz …)`), so the function no longer reports phantom drift on every `plan`/`run`/`drift`. `0.18.2` is required for the `SECURITY DEFINER` search_path pins (see below): it emits the pin as a valid `SET search_path` clause and compares it against `pg_proc.proconfig` semantically (whitespace/case-normalized), so a pinned function converges to a clean no-op instead of reporting phantom drift. `0.21.1` is required to upgrade an existing database to the case-insensitive `user_communication_methods_channel_code_key`: it swaps a redefined index in without `--allow-destructive` and keeps the old one if the new one cannot be built. Older versions skip the change unless you pass the flag, and can leave the table without a working index if the build fails.
+Requires **`@smplcty/schema-flow >= 0.25.0`** — the shipped seeds assign no primary keys (the app-init user and the standard roles are matched by their natural keys, `name`/`kind`) and rely on insert-only seeding, where an existing row is never overwritten. `0.13.0` makes insert-only the default (the old per-table `seeds_on_conflict` knob is gone); on older versions these seeds would upsert and clobber any consumer edits to the standard roles on every migration. `0.14.0` is required so `resolve_session` converges: it canonicalizes function type aliases (`resolve_session` returns a `TABLE(… expires_at timestamptz …)`), so the function no longer reports phantom drift on every `plan`/`run`/`drift`. `0.18.2` is required for the `SECURITY DEFINER` search_path pins (see below): it emits the pin as a valid `SET search_path` clause and compares it against `pg_proc.proconfig` semantically (whitespace/case-normalized), so a pinned function converges to a clean no-op instead of reporting phantom drift. `0.21.1` is required to upgrade an existing database to the case-insensitive `user_communication_methods_channel_code_key`: it swaps a redefined index in without `--allow-destructive` and keeps the old one if the new one cannot be built. Older versions skip the change unless you pass the flag, and can leave the table without a working index if the build fails. `0.25.0` is required so the `bootstrapSession` setting below reaches auth's seeds: earlier versions apply it only to `bootstrap: true` tables, so the migration fails on the first seeded table.
 
 If you are upgrading an existing database, run schema-flow with `--allow-destructive` once: `0.14.0` recreates a function whose return type changed via `DROP … CASCADE` + a post-apply convergence pass that restores the dependent RLS policies, and (where a live DB carries a plain `UNIQUE` constraint sharing a name with one of auth's partial-unique indexes) drops the constraint and builds the partial index. Both paths are gated behind the flag; without it the change is reported as blocked rather than silently no-applied.
 
@@ -505,12 +546,14 @@ Import auth's schema and `@smplcty/schema-std` from your schema-flow config. See
 
 ```yaml
 default:
+  bootstrapSession:
+    app.audit_lenient: true # required: lets the seeds through with no actor (see below)
   imports:
     - package: '@smplcty/schema-std' # generic mixins, parameterized to users / user_id / app.actor_id
     - package: '@smplcty/auth' # identity/tenant/auth_domains tables + resolve_session/current_user_id
 ```
 
-The `audit` mixin makes `created_by`/`updated_by` NOT NULL, stamped from `app.actor_id`. Rows seeded during migration have no request actor, so the shipped `post/` script back-fills them to the seeded `app-init` service user (resolved by name, not a fixed id) before the NOT NULL tighten phase — see the config for details.
+The `audit` mixin makes `created_by`/`updated_by` NOT NULL, stamped from `app.actor_id`, and refuses any write to an audited table when `app.actor_id` is not set. Rows seeded during migration have no request actor, so the config must set `bootstrapSession: { app.audit_lenient: true }`: schema-flow sets it only while writing seeds, which then land with NULL attribution, and the shipped `post/` script back-fills them to the seeded `app-init` service user (resolved by name, not a fixed id) before the NOT NULL tighten phase. Without it, the migration stops at the first seeded table with `audit_stamp: app.actor_id is not set`.
 
 ### ⚠️ Known limitation — auth must deploy into the `public` schema
 

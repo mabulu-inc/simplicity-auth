@@ -1,6 +1,6 @@
 {
   "name": "@smplcty/auth",
-  "version": "11.0.0",
+  "version": "11.1.0",
   "description": "Robust, type-safe session and role-based authentication primitives for PostgreSQL apps using Row-Level Security.",
   "license": "MIT",
   "type": "module",
@@ -21,6 +21,11 @@
       "types": "./dist/methods/twilio/index.d.ts",
       "import": "./dist/methods/twilio/index.js",
       "default": "./dist/methods/twilio/index.js"
+    },
+    "./email-code": {
+      "types": "./dist/methods/email-code/index.d.ts",
+      "import": "./dist/methods/email-code/index.js",
+      "default": "./dist/methods/email-code/index.js"
     },
     "./flat-tenant": {
       "types": "./dist/scope/flat-tenant.d.ts",
@@ -96,6 +101,7 @@
     ]
   },
   "peerDependencies": {
+    "@smplcty/schema-flow": ">=0.25.0",
     "@smplcty/twilio": ">=0.1.0",
     "oauth4webapi": ">=3.0.0",
     "pg": ">=8.0.0"
@@ -106,35 +112,33 @@
     },
     "oauth4webapi": {
       "optional": true
+    },
+    "@smplcty/schema-flow": {
+      "optional": true
     }
   },
   "devDependencies": {
     "@release-it/keep-a-changelog": "^8.0.1",
-    "@smplcty/schema-flow": "^0.24.0",
+    "@smplcty/schema-flow": "^0.26.0",
     "@smplcty/twilio": "^0.1.1",
-    "@testcontainers/postgresql": "^12.2.0",
-    "@types/node": "^22.20.5",
+    "@testcontainers/postgresql": "^12.2.1",
+    "@types/node": "^26.6.6",
     "@types/pg": "^8.23.1",
     "husky": "^9.1.7",
-    "jose": "^6.2.12",
+    "jose": "^6.2.14",
     "lint-staged": "^17.6.0",
     "oauth4webapi": "^3.8.8",
-    "oxlint": "^1.87.0",
+    "oxlint": "^1.90.0",
     "pg": "^8.23.1",
     "prettier": "^3.9.10",
-    "release-it": "^21.1.1",
+    "release-it": "^21.1.2",
     "typescript": "^7.0.2",
-    "vite": "^8.3.4",
-    "vitest": "^5.0.4"
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
   },
   "dependencies": {
     "@smplcty/db": "^4.3.0",
-    "@smplcty/schema-std": "^0.0.1",
-    "otplib": "^13.5.0"
-  },
-  "pnpm": {
-    "overrides": {
-      "undici@7.29.0": "7.29.1"
-    }
+    "@smplcty/schema-std": "^0.1.0",
+    "otplib": "^13.6.0"
   }
 }
