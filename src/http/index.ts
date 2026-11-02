@@ -23,6 +23,7 @@ export type {
   AuthCookieConfig,
   AuthHandlers,
   RequestSessionMeta,
+  SignInFailure,
   SignInHooks,
   SignInMethod,
 } from './types.js';

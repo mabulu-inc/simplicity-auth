@@ -21,9 +21,16 @@ export class OtpNotAllowedError extends AuthError {
 export class VerificationFailedError extends AuthError {
   override readonly name = 'VerificationFailedError';
   override readonly code = 'VERIFICATION_FAILED' as const;
+  /**
+   * Why, more specifically than the message, for the people who run the
+   * identity provider (see `AuthHttpConfig.onSignInFailure`): the provider's own
+   * error, say. The message stays generic because it can reach the person signing in.
+   */
+  readonly detail?: string;
 
-  constructor(message: string = 'Verification failed') {
+  constructor(message: string = 'Verification failed', options: { detail?: string } = {}) {
     super(message);
+    if (options.detail !== undefined) this.detail = options.detail;
   }
 }
 

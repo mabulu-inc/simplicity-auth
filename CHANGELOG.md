@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Apps can show admins why an SSO sign-in failed.** A new `onSignInFailure`
+  option on the HTTP transport is called whenever an OIDC sign-in through a
+  known auth domain fails, at start or callback. It gets the error code, the
+  auth domain, and a `detail` meant for that identity provider's admins: the
+  provider's own refusal when it sent one (such as Entra's `AADSTS7000215:
+Invalid client secret provided.`), or which address had no user. The person
+  signing in still gets only the code. It isn't called when no auth domain can
+  be named, such as a callback without a valid login-state cookie.
+- `VerificationFailedError` carries an optional `detail`, the specific reason
+  behind its generic message.
+
 ## [12.1.0] - 2026-10-31
 
 ### Added
