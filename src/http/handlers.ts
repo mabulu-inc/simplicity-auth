@@ -192,6 +192,30 @@ export function createAuthHandlers(config: AuthHttpConfig): AuthHandlers {
     return res;
   }
 
+  /** Tell the app why a sign-in through `authDomainId` failed. Never fails the answer. */
+  async function reportFailure(err: unknown, authDomainId: number, request: Request): Promise<void> {
+    if (!config.onSignInFailure) return;
+    const detail =
+      err instanceof VerificationFailedError && err.detail
+        ? err.detail
+        : err instanceof EmailDomainNotVerifiedError
+          ? `The identity provider signed in an address at ${err.domain}, an email domain that isn't verified`
+          : err instanceof Error
+            ? err.message
+            : String(err);
+    try {
+      await config.onSignInFailure({
+        code: err instanceof AuthError ? err.code : 'SIGN_IN_FAILED',
+        authDomainId,
+        detail,
+        error: err,
+        request,
+      });
+    } catch (hookErr) {
+      (config.logger ?? noopLogger).error({ err: hookErr }, 'onSignInFailure hook failed; the answer stands');
+    }
+  }
+
   function signInFailureFor(err: unknown, clearLoginState = false): Response {
     const code = err instanceof AuthError ? err.code : 'SIGN_IN_FAILED';
     return signInFailure(code, toErrorResponse(err), clearLoginState);
@@ -294,6 +318,7 @@ export function createAuthHandlers(config: AuthHttpConfig): AuthHandlers {
     },
 
     async oidcStart(request) {
+      let knownAuthDomainId: number | undefined;
       try {
         if (!config.oidc) return signInFailure('OIDC_NOT_CONFIGURED', json({ error: 'OIDC is not configured' }, 404));
         const url = new URL(request.url);
@@ -304,6 +329,7 @@ export function createAuthHandlers(config: AuthHttpConfig): AuthHandlers {
         }
         const authDomain = await getAuthDomain(pool, authDomainId);
         if (!authDomain) return signInFailure('UNKNOWN_AUTH_DOMAIN', json({ error: 'unknown auth domain' }, 404));
+        knownAuthDomainId = authDomainId;
         const { redirectUrl, loginState } = await config.oidc.initiate(authDomain);
         const returnTo = sanitizeReturnTo(url.searchParams.get('returnTo'));
         const stateToken = await signLoginState(
@@ -321,12 +347,14 @@ export function createAuthHandlers(config: AuthHttpConfig): AuthHandlers {
         );
         return res;
       } catch (err) {
+        if (knownAuthDomainId !== undefined) await reportFailure(err, knownAuthDomainId, request);
         return signInFailureFor(err);
       }
     },
 
     async oidcCallback(request) {
       let loginStateValid = false;
+      let knownAuthDomainId: number | undefined;
       try {
         if (!config.oidc) return signInFailure('OIDC_NOT_CONFIGURED', json({ error: 'OIDC is not configured' }, 404));
         const cookies = parseCookies(request.headers.get('cookie'));
@@ -343,6 +371,7 @@ export function createAuthHandlers(config: AuthHttpConfig): AuthHandlers {
         if (!authDomain) {
           return signInFailure('UNKNOWN_AUTH_DOMAIN', json({ error: 'unknown auth domain' }, 404), true);
         }
+        knownAuthDomainId = authDomain.authDomainId;
         const user = await config.oidc.complete({
           db: pool,
           authDomain,
@@ -356,6 +385,7 @@ export function createAuthHandlers(config: AuthHttpConfig): AuthHandlers {
         res.headers.append('set-cookie', serializeCookie(loginStateCookieName, '', sessionCookieOptions(0)));
         return res;
       } catch (err) {
+        if (knownAuthDomainId !== undefined) await reportFailure(err, knownAuthDomainId, request);
         return signInFailureFor(err, loginStateValid);
       }
     },

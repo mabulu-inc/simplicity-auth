@@ -493,6 +493,134 @@ describe('createAuthHandlers — OIDC end-to-end', () => {
     });
   });
 
+  describe('telling the app why a sign-in failed', () => {
+    type Failure = Parameters<NonNullable<AuthHttpConfig['onSignInFailure']>>[0];
+
+    function reporting(fetchOverride: typeof fetch = fetchImpl) {
+      const failures: Failure[] = [];
+      const config = makeConfig({
+        signInErrorPath: '/sign-in',
+        onSignInFailure: (failure) => {
+          failures.push(failure);
+        },
+        oidc: oidcHandler({ fetch: fetchOverride, clientSecret: () => 'mock-secret' }),
+      });
+      return { handlers: createAuthHandlers(config), failures };
+    }
+
+    async function startAndCallBack(handlers: ReturnType<typeof createAuthHandlers>, query: (state: string) => string) {
+      const start = await handlers.oidcStart(
+        req('GET', `https://app.test/auth/oidc/start?authDomainId=${authDomainId}`),
+      );
+      const state = new URL(start.headers.get('location')!).searchParams.get('state')!;
+      const stateCookie = setCookieValue(start, 'pn_session_oidc')!;
+      const login = await verifyLoginState(stateCookie, 'test-login-state-secret', 600);
+      return {
+        login: login!,
+        callback: () =>
+          handlers.oidcCallback(
+            req('GET', `https://app.test/auth/oidc/callback?${query(state)}`, {
+              cookie: `pn_session_oidc=${stateCookie}`,
+            }),
+          ),
+      };
+    }
+
+    it('reports the code, the auth domain and a detail the person never sees', async () => {
+      const { handlers, failures } = reporting();
+      const flow = await startAndCallBack(handlers, (state) => `code=c&state=${state}`);
+      await signIdToken({ sub: 'sub-ghost', nonce: flow.login.nonce, email: 'ghost@globex.com' });
+
+      const res = await flow.callback();
+
+      expect(res.headers.get('location')).toBe('/sign-in?error=VERIFICATION_FAILED');
+      expect(failures).toHaveLength(1);
+      expect(failures[0]).toMatchObject({ code: 'VERIFICATION_FAILED', authDomainId });
+      expect(failures[0]!.detail).toContain('ghost@globex.com');
+    });
+
+    it("passes on the identity provider's own refusal at the sign-in", async () => {
+      const { handlers, failures } = reporting();
+      const flow = await startAndCallBack(
+        handlers,
+        (state) =>
+          `error=access_denied&error_description=${encodeURIComponent('AADSTS50105: not assigned to a role')}&state=${state}`,
+      );
+
+      await flow.callback();
+
+      expect(failures[0]!.detail).toBe(
+        'The identity provider refused the sign-in: access_denied: AADSTS50105: not assigned to a role',
+      );
+    });
+
+    it("passes on the identity provider's refusal of the token request, such as a wrong client secret", async () => {
+      const refusingTokens = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) =>
+        String(input).endsWith('/token')
+          ? Response.json(
+              { error: 'invalid_client', error_description: 'AADSTS7000215: Invalid client secret provided.' },
+              { status: 401 },
+            )
+          : fetchImpl(input, init)) as typeof fetch;
+      const { handlers, failures } = reporting(refusingTokens);
+      const flow = await startAndCallBack(handlers, (state) => `code=c&state=${state}`);
+
+      await flow.callback();
+
+      expect(failures[0]!.detail).toBe(
+        'The identity provider refused the token request: invalid_client: AADSTS7000215: Invalid client secret provided.',
+      );
+    });
+
+    it('names the unverified domain, not the tenant id', async () => {
+      const { handlers, failures } = reporting();
+      const flow = await startAndCallBack(handlers, (state) => `code=c&state=${state}`);
+      await signIdToken({ sub: 'sub-bob', nonce: flow.login.nonce, email: 'bob@unverified.example' });
+
+      await flow.callback();
+
+      expect(failures[0]).toMatchObject({
+        code: 'EMAIL_DOMAIN_NOT_VERIFIED',
+        detail: "The identity provider signed in an address at unverified.example, an email domain that isn't verified",
+      });
+    });
+
+    it('reports nothing when no auth domain can be named: a forged callback or an unknown auth domain', async () => {
+      const { handlers, failures } = reporting();
+      await handlers.oidcCallback(
+        req('GET', 'https://app.test/auth/oidc/callback?code=c&state=s', { cookie: 'pn_session_oidc=forged.sig' }),
+      );
+      await handlers.oidcStart(req('GET', 'https://app.test/auth/oidc/start?authDomainId=999999'));
+
+      expect(failures).toEqual([]);
+    });
+
+    it('still answers when the hook throws', async () => {
+      const handlers = createAuthHandlers(
+        makeConfig({
+          signInErrorPath: '/sign-in',
+          onSignInFailure: () => {
+            throw new Error('database down');
+          },
+          oidc: oidcHandler({ fetch: fetchImpl, clientSecret: () => 'mock-secret' }),
+        }),
+      );
+      const start = await handlers.oidcStart(
+        req('GET', `https://app.test/auth/oidc/start?authDomainId=${authDomainId}`),
+      );
+      const state = new URL(start.headers.get('location')!).searchParams.get('state')!;
+      const stateCookie = setCookieValue(start, 'pn_session_oidc')!;
+
+      const res = await handlers.oidcCallback(
+        req('GET', `https://app.test/auth/oidc/callback?error=access_denied&state=${state}`, {
+          cookie: `pn_session_oidc=${stateCookie}`,
+        }),
+      );
+
+      expect(res.headers.get('location')).toBe('/sign-in?error=VERIFICATION_FAILED');
+    });
+  });
+
   describe('with sign-in hooks (#26)', () => {
     it("refuses a verified IdP user before a session exists, sending only the app's code to the error path", async () => {
       const before = await sessionCount();

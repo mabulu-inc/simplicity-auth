@@ -49,6 +49,12 @@ export interface AuthHttpConfig {
    *  error code appended as `?error=<CODE>`. Must be a path on this site;
    *  `createAuthHandlers` throws otherwise. Omit it to answer those failures with JSON. */
   signInErrorPath?: string;
+  /** Called when an OIDC sign-in through a known auth domain fails, at start or
+   *  callback, before the failure is answered, so the app can show that
+   *  provider's admins why. Not called when no auth domain can be named: a
+   *  callback without a valid login-state cookie, or an unknown auth domain. A
+   *  hook that throws is logged and ignored; the person still gets the answer. */
+  onSignInFailure?: (failure: SignInFailure) => void | Promise<void>;
   /** The user-bound code handler: one for every identifier (e.g. `twilioVerifyHandler`),
    *  or one per kind, `{ email, phone }`. Omit for SSO-only. */
   otpHandler?: MethodHandler | OtpHandlers;
@@ -64,6 +70,20 @@ export interface AuthHttpConfig {
   logger?: Logger;
   /** Derive IP/geo for the `sessions` row from the request. */
   sessionMeta?: (request: Request) => RequestSessionMeta | undefined;
+}
+
+/** A failed OIDC sign-in, for {@link AuthHttpConfig.onSignInFailure}. */
+export interface SignInFailure {
+  /** The code the person's answer carries (`?error=` with `signInErrorPath`). */
+  code: string;
+  /** The auth domain the attempt went through. */
+  authDomainId: number;
+  /** Why, for that provider's admins: the identity provider's own error when it
+   *  sent one, else the library's. Never a credential or token. */
+  detail: string;
+  /** What was thrown, for the app's own logs. */
+  error: unknown;
+  request: Request;
 }
 
 /** How the person proved who they are. */

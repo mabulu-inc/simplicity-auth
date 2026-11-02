@@ -216,6 +216,7 @@ const data = await withRequestSession(request, config, async (client, ctx) => {
 | `loginStateTtlSeconds` | | OIDC login-state cookie lifetime. Default `600`. |
 | `returnToDefault` | | Post-sign-in redirect when no safe `returnTo` is given. Default `'/'`. |
 | `signInErrorPath` | | Where a failed OIDC start or callback sends the browser, with `?error=<CODE>` appended. Must be a path on this site. Omit to answer those failures with JSON. |
+| `onSignInFailure` | | Called with `{ code, authDomainId, detail, error, request }` when an OIDC sign-in through a known auth domain fails, before the answer. `detail` is for that provider's admins: the identity provider's own error when it sent one (Entra's `AADSTS…` text, say), never a credential or token. Not called without a nameable auth domain (a forged callback, an unknown id). A throw is logged and ignored. |
 | `sessionMeta` | | Derive IP/geo for the `sessions` row from the request. |
 | `logger` | | Passed through to `withSession`; also receives a failed `afterSignIn`. |
 
@@ -236,7 +237,7 @@ const data = await withRequestSession(request, config, async (client, ctx) => {
   (`400`/`401`/`403`) with generic messages and never leak internals (unknown
   errors become a bare `500`). With `signInErrorPath` set, the OIDC endpoints
   redirect there with only the error code (`SIGN_IN_FAILED` for an unknown
-  error). The path's own query is re-encoded, so `?q=a%20b` arrives as `?q=a+b`.
+  error). Why it failed goes to `onSignInFailure`, for the admins, not to the person. The path's own query is re-encoded, so `?q=a%20b` arrives as `?q=a+b`.
   Map the code to fixed text; anyone can link to the path with any `error`.
 
 See the [security model](/simplicity-auth/security/) for the library-wide

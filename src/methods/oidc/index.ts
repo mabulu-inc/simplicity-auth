@@ -275,7 +275,7 @@ export function oidcHandler(options: OidcHandlerOptions = {}): OidcHandler {
         claims = validated;
       } catch (err) {
         if (err instanceof VerificationFailedError) throw err;
-        throw new VerificationFailedError('OIDC authorization failed');
+        throw new VerificationFailedError('OIDC authorization failed', { detail: providerFailure(err) });
       }
 
       // Entra often carries the address in preferred_username rather than email.
@@ -307,7 +307,22 @@ export function oidcHandler(options: OidcHandlerOptions = {}): OidcHandler {
       if (options.provisionUser) {
         return options.provisionUser({ db, authDomain, claims });
       }
-      throw new VerificationFailedError('No user for verified identity and provisioning is disabled');
+      throw new VerificationFailedError('No user for verified identity and provisioning is disabled', {
+        detail: `No user has the address ${email}, which the identity provider signed in`,
+      });
     },
   };
+}
+
+/**
+ * Why the authorization or token exchange failed, in the provider's own words
+ * when it sent an OAuth error (Entra's `AADSTS…` descriptions, say). Neither
+ * error carries a credential or token.
+ */
+function providerFailure(err: unknown): string {
+  if (err instanceof oauth.AuthorizationResponseError || err instanceof oauth.ResponseBodyError) {
+    const where = err instanceof oauth.AuthorizationResponseError ? 'the sign-in' : 'the token request';
+    return `The identity provider refused ${where}: ${[err.error, err.error_description].filter(Boolean).join(': ')}`;
+  }
+  return `OIDC authorization failed: ${err instanceof Error ? err.message : String(err)}`;
 }
