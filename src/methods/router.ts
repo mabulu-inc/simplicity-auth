@@ -78,6 +78,13 @@ export function createMethodRouter(options: MethodRouterOptions): MethodRouter {
     return handler;
   }
 
+  /** Refuses an address at a domain that requires SSO, before anything else, so it is told to use SSO. */
+  async function refuseSsoRequiredDomain(identifier: string): Promise<void> {
+    const domain = emailDomainOf(identifier);
+    const required = domain ? await ssoRequiredDomain(q, [domain]) : null;
+    if (required) throw new SsoRequiredError(required);
+  }
+
   return {
     async signInOptions({ tenantSlug }): Promise<SignInOptions | null> {
       if (typeof tenantSlug !== 'string' || tenantSlug.length === 0) {
@@ -106,11 +113,8 @@ export function createMethodRouter(options: MethodRouterOptions): MethodRouter {
       if (typeof identifier !== 'string' || identifier.length === 0) {
         throw new InvalidInputError('identifier must be a non-empty string');
       }
+      await refuseSsoRequiredDomain(identifier);
       const handler = handlerFor(identifier);
-      // Don't send a code to an address that could never use it.
-      const domain = emailDomainOf(identifier);
-      const required = domain ? await ssoRequiredDomain(q, [domain]) : null;
-      if (required) throw new SsoRequiredError(required);
       // The same verdict completeOtp reaches on the resolved user. By default it
       // answers as for an unknown identifier, so it doesn't reveal whose a phone is.
       const user = await handler.resolveUser?.({ db: options.db, identifier });
@@ -127,6 +131,7 @@ export function createMethodRouter(options: MethodRouterOptions): MethodRouter {
       if (typeof credential !== 'string' || credential.length === 0) {
         throw new InvalidInputError('credential must be a non-empty string');
       }
+      await refuseSsoRequiredDomain(identifier);
       const user = await handlerFor(identifier).complete({ db: options.db, identifier, credential });
       // Checked on the resolved user, not just the identifier: someone whose
       // email is at an SSO-required domain can't sign in by phone either.

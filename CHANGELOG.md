@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **An address at a domain that requires SSO is told to use SSO at both
+  sign-in steps.** `initiateOtp` and `completeOtp` now check the address's
+  domain before anything else. Before, an app with no handler for that kind of
+  contact (an email address when only `phone` is set) answered
+  `OtpNotAllowedError` instead of `SsoRequiredError`. `completeOtp` also refused
+  such an address only after checking its code, so a wrong code was reported as
+  a wrong code. Now it is refused before any code is checked.
+
 ## [12.2.0] - 2026-11-02
 
 ### Added

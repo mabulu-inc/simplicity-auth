@@ -3,6 +3,7 @@ import pg from 'pg';
 import {
   createMethodRouter,
   InvalidInputError,
+  OtpNotAllowedError,
   SsoRequiredError,
   withServiceContext,
   type MethodHandler,
@@ -441,6 +442,29 @@ describe('a verified domain that requires SSO closes code sign-in everywhere', (
 
         expect(emailed).toEqual([]);
         expect(sent).toEqual(['+15555550122']);
+      });
+
+      it('tells an address at the domain to use SSO even when its kind has no handler, at both steps', async () => {
+        const sms = twilioVerifyHandler({
+          client: {
+            async sendVerificationCode() {
+              return true;
+            },
+            async verifyVerificationCode() {
+              return true;
+            },
+          },
+        });
+        const router = createMethodRouter({ db: db.pool, otpHandler: { phone: sms } });
+
+        await expect(router.initiateOtp({ identifier: 'alice@acme.com' })).rejects.toBeInstanceOf(SsoRequiredError);
+        await expect(router.completeOtp({ identifier: 'alice@acme.com', credential: '000000' })).rejects.toBeInstanceOf(
+          SsoRequiredError,
+        );
+        await expect(router.initiateOtp({ identifier: 'bob@globex.com' })).rejects.toBeInstanceOf(OtpNotAllowedError);
+        await expect(router.completeOtp({ identifier: 'bob@globex.com', credential: '000000' })).rejects.toBeInstanceOf(
+          OtpNotAllowedError,
+        );
       });
 
       // The README's dispatch example: one handler per identifier kind, with
