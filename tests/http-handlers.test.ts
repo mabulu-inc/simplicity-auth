@@ -572,6 +572,19 @@ describe('createAuthHandlers — OIDC end-to-end', () => {
       );
     });
 
+    it('names the unverified domain, not the tenant id', async () => {
+      const { handlers, failures } = reporting();
+      const flow = await startAndCallBack(handlers, (state) => `code=c&state=${state}`);
+      await signIdToken({ sub: 'sub-bob', nonce: flow.login.nonce, email: 'bob@unverified.example' });
+
+      await flow.callback();
+
+      expect(failures[0]).toMatchObject({
+        code: 'EMAIL_DOMAIN_NOT_VERIFIED',
+        detail: "The identity provider signed in an address at unverified.example, an email domain that isn't verified",
+      });
+    });
+
     it('reports nothing when no auth domain can be named: a forged callback or an unknown auth domain', async () => {
       const { handlers, failures } = reporting();
       await handlers.oidcCallback(

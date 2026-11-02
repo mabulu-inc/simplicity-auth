@@ -198,9 +198,11 @@ export function createAuthHandlers(config: AuthHttpConfig): AuthHandlers {
     const detail =
       err instanceof VerificationFailedError && err.detail
         ? err.detail
-        : err instanceof Error
-          ? err.message
-          : String(err);
+        : err instanceof EmailDomainNotVerifiedError
+          ? `The identity provider signed in an address at ${err.domain}, an email domain that isn't verified`
+          : err instanceof Error
+            ? err.message
+            : String(err);
     try {
       await config.onSignInFailure({
         code: err instanceof AuthError ? err.code : 'SIGN_IN_FAILED',
