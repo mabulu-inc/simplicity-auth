@@ -1,8 +1,9 @@
 import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
-import { InvalidInputError } from '../../errors.js';
+import { AuthError, InvalidInputError } from '../../errors.js';
 import { findUserByCommunicationMethod } from '../../find-user-by-communication-method.js';
 import { isDevOtpEnrolled, verifyDevOtp } from '../../dev-otp.js';
 import { DeliveryUnavailableError, RecipientRefusedError, VerificationFailedError } from '../errors.js';
+import { isTransientFailure } from '../../internal/transient.js';
 import type { Queryable } from '../../types.js';
 import type {
   MethodCompleteContext,
@@ -106,6 +107,21 @@ const RECORD_FAILED_ATTEMPT = `
   WHERE email_sign_in_code_id = $1
 `;
 
+/**
+ * What a `sendCode` error means. The app's own `AuthError`s
+ * (`DeliveryUnavailableError`, `RecipientRefusedError`) are its explicit
+ * answer. Otherwise a temporary network or database failure is an outage of
+ * the app's email provider, and anything else a refusal of this address. An app
+ * whose `sendCode` connects to each recipient's own mail server must throw
+ * `RecipientRefusedError` for those failures, or one dead mail domain would
+ * read as an outage for everyone.
+ */
+function classifySendFailure(err: unknown): unknown {
+  if (err instanceof AuthError) return err;
+  if (isTransientFailure(err)) return new DeliveryUnavailableError(undefined, { cause: err });
+  return new RecipientRefusedError(undefined, { cause: err });
+}
+
 function requireIdentifier(identifier: string | undefined): string {
   if (typeof identifier !== 'string' || identifier.length === 0) {
     throw new InvalidInputError('the email code handler requires a non-empty identifier');
@@ -174,14 +190,11 @@ export function emailCodeHandler(options: EmailCodeHandlerOptions): MethodHandle
         try {
           await sendCode({ to: identifier, code });
         } catch (err) {
-          // The person never got this code, so they keep the one they had.
-          await ctx.db.query(UNDO_ISSUE, [issued.id, issued.retiredIds]);
-          // sendCode's errors are the provider's answer, not a bug of ours: an
-          // outage only when the app says so (it may talk to the recipient's own
-          // mail server, so a network error can be about this address),
-          // otherwise a refusal of this address.
-          if (err instanceof DeliveryUnavailableError) throw err;
-          throw new RecipientRefusedError(undefined, { cause: err });
+          // The person never got this code, so they keep the one they had. If
+          // that fails too, the provider's answer still decides the response:
+          // the person is left without their old code, as before 12.3.0.
+          await ctx.db.query(UNDO_ISSUE, [issued.id, issued.retiredIds]).catch(() => {});
+          throw classifySendFailure(err);
         }
       }
       return { otpSent: true };

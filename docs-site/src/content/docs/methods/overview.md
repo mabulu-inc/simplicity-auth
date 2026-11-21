@@ -63,9 +63,10 @@ Every failure on the code path gets one of three answers:
 
 - **A temporary failure, which retrying will fix.** That covers a provider
   outage (it's down, its credentials are wrong, an account-wide rate limit), and
-  a failure of our own database or Twilio calls on a short list: a dropped
-  connection, a pool timeout, a statement timeout, a deadlock, a socket reset, a
-  temporary DNS failure. The Twilio handler
+  a database or network failure on a short list: a dropped connection, a pool
+  timeout, a statement timeout, a deadlock, a socket reset, a DNS failure. That
+  includes one inside an email `sendCode`, which is taken to be the app's email
+  provider failing. The Twilio handler
   reports an outage on its own with `@smplcty/twilio` 0.2.0 or later, and an
   email `sendCode` does so by throwing `DeliveryUnavailableError`. For the next
   `OTP_OUTAGE_WINDOW_SECONDS` (60), every identifier of that kind, account or
@@ -75,9 +76,10 @@ Every failure on the code path gets one of three answers:
   already have.
 - **The provider refused this one recipient** (an invalid or blocked number, a
   rejected address). It is answered as for an unknown identifier and logged as a
-  warning. Any error `sendCode` throws, other than `DeliveryUnavailableError`,
-  counts as this, even a network error: `sendCode` may talk to the recipient's
-  own mail server, so only the app can say a failure is an outage.
+  warning. Any other error `sendCode` throws counts as this. If your `sendCode`
+  connects to each recipient's own mail server, rather than to one provider's
+  API, throw `RecipientRefusedError` for a network failure there: otherwise one
+  address with a dead mail server reads as an outage for everyone.
 - **Anything else is a bug.** It is logged and rethrown, so the HTTP tier
   answers `500`. It is never answered as "code sent" or as an outage, because
   hiding a bug keeps it alive. A custom handler should therefore throw

@@ -247,7 +247,7 @@ describe('createMethodRouter — a failed send answers as for an unknown identif
     expect(await router.initiateOtp({ identifier: KNOWN })).toEqual({ otpSent: true });
   });
 
-  it("a database code inside sendCode is still the app's answer: a refusal, logged with that code (#38)", async () => {
+  it("a temporary failure inside sendCode is an outage, logged with the error's own code (#38)", async () => {
     const logger = recordingLogger();
     const dbDown = emailCodeHandler({
       codeSecret: 'test-email-code-secret-at-least-32-bytes',
@@ -256,10 +256,12 @@ describe('createMethodRouter — a failed send answers as for an unknown identif
       },
     });
     const router = createMethodRouter({ db: db.pool, otpHandler: dbDown, logger });
-    expect(await router.initiateOtp({ identifier: KNOWN })).toEqual({ otpSent: true });
+    expect(await router.initiateOtp({ identifier: KNOWN }).catch((e: unknown) => e)).toBeInstanceOf(
+      DeliveryUnavailableError,
+    );
     expect(logger.entries[0]).toEqual({
       data: { kind: 'email', error: 'error', code: '57P01' },
-      msg: 'OTP recipient refused',
+      msg: 'OTP initiate unavailable',
     });
   });
 
@@ -497,7 +499,10 @@ describe('createMethodRouter — outages and reveal mode (#36)', () => {
     await failing(Object.assign(new Error('x'), { name: 'RestException', code: 21608 })).initiateOtp({
       identifier: KNOWN,
     });
-    await failing(new TypeError('fetch failed', { cause: { code: 'ECONNRESET' } })).initiateOtp({ identifier: KNOWN });
+    // A socket reset inside sendCode is an outage of the app's provider (#38), logged with the cause's code.
+    await failing(new TypeError('fetch failed', { cause: { code: 'ECONNRESET' } }))
+      .initiateOtp({ identifier: KNOWN })
+      .catch(() => {});
     expect(entries).toEqual([
       { kind: 'email', error: 'RestException', code: '21608' },
       { kind: 'email', error: 'TypeError', code: 'ECONNRESET' },
@@ -631,6 +636,7 @@ describe('createMethodRouter — temporary failures and bugs (#38)', () => {
     ["pg's connection terminated", new Error('Connection terminated unexpectedly')],
     ['a socket reset', Object.assign(new Error('x'), { code: 'ECONNRESET' })],
     ['a temporary DNS failure', new TypeError('fetch failed', { cause: { code: 'EAI_AGAIN' } })],
+    ['a DNS failure musl reports as ENOTFOUND', new TypeError('fetch failed', { cause: { code: 'ENOTFOUND' } })],
   ])('%s during a check is an outage for everyone, not a 500 for account holders', async (_name, err) => {
     const router = createMethodRouter({
       db: db.pool,
@@ -645,31 +651,62 @@ describe('createMethodRouter — temporary failures and bugs (#38)', () => {
     );
   });
 
-  it('a host that does not exist (ENOTFOUND) is a bug, not "try again shortly" forever', async () => {
-    const err = new TypeError('fetch failed', { cause: { code: 'ENOTFOUND' } });
-    const router = createMethodRouter({
-      db: db.pool,
-      logger: recording().logger,
-      otpHandler: failingAfterLookup(err, 'complete'),
-    });
-    expect(await outcome(router.completeOtp({ identifier: KNOWN, credential: '123456' }))).toBe(err);
-  });
-
-  it("a network error inside sendCode can't shut sign-in down for everyone", async () => {
-    // sendCode may deliver to the recipient's own mail server, so one address
-    // whose server refuses connections must not open the outage window, even
-    // though ECONNREFUSED is on the temporary list for our own calls.
+  it("an email provider unreachable from sendCode is an outage for everyone, not 'code sent' (#38)", async () => {
     const router = createMethodRouter({
       db: db.pool,
       logger: recording().logger,
       otpHandler: emailCodeHandler({
         codeSecret: 'test-email-code-secret-at-least-32-bytes',
         sendCode: async () => {
-          throw new TypeError('fetch failed', { cause: { code: 'ECONNREFUSED' } });
+          throw new TypeError('fetch failed', { cause: { code: 'ETIMEDOUT' } });
+        },
+      }),
+    });
+    expect(await outcome(router.initiateOtp({ identifier: KNOWN }))).toBeInstanceOf(DeliveryUnavailableError);
+    expect(await outcome(router.initiateOtp({ identifier: STRANGER }))).toBeInstanceOf(DeliveryUnavailableError);
+  });
+
+  it("a sendCode that delivers to recipients' own servers marks a dead one as a refusal: hidden, logged with the provider's code, no window", async () => {
+    const { entries, logger } = recording();
+    const router = createMethodRouter({
+      db: db.pool,
+      logger,
+      otpHandler: emailCodeHandler({
+        codeSecret: 'test-email-code-secret-at-least-32-bytes',
+        sendCode: async () => {
+          throw new RecipientRefusedError(undefined, {
+            cause: new TypeError('fetch failed', { cause: { code: 'ECONNREFUSED' } }),
+          });
         },
       }),
     });
     expect(await router.initiateOtp({ identifier: KNOWN })).toEqual({ otpSent: true });
+    expect(await router.initiateOtp({ identifier: STRANGER })).toEqual({ otpSent: true });
+    expect(entries[0]).toEqual({
+      level: 'warn',
+      data: { kind: 'email', error: 'TypeError', code: 'ECONNREFUSED' },
+      msg: 'OTP recipient refused',
+    });
+  });
+
+  it("a failure undoing the code doesn't replace the provider's answer", async () => {
+    // Fail only the undo, with a deadlock that would otherwise open the outage window.
+    const flaky = {
+      query: (text: string, values?: unknown[]) =>
+        text.includes('delivery_failed_at = CASE')
+          ? Promise.reject(Object.assign(new Error('deadlock detected'), { code: '40P01' }))
+          : db.pool.query(text, values),
+    } as unknown as typeof db.pool;
+    const router = createMethodRouter({
+      db: flaky,
+      logger: recording().logger,
+      otpHandler: emailCodeHandler({
+        codeSecret: 'test-email-code-secret-at-least-32-bytes',
+        sendCode: async () => {
+          throw Object.assign(new Error('rejected'), { name: 'MessageRejected' });
+        },
+      }),
+    });
     expect(await router.initiateOtp({ identifier: KNOWN })).toEqual({ otpSent: true });
     expect(await router.initiateOtp({ identifier: STRANGER })).toEqual({ otpSent: true });
   });

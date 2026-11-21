@@ -18,8 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **A temporary database or network failure no longer answers with an error that
   only account holders get.** A dropped connection, pool timeout, statement
-  timeout, deadlock, socket reset or temporary DNS failure in the library's own
-  database or Twilio calls, during code sign-in or code checking, now gets
+  timeout, deadlock, socket reset or DNS failure during code sign-in or code
+  checking, including one from your email provider inside `sendCode`, now gets
   "try again shortly" (`503 DELIVERY_UNAVAILABLE`), the same for everyone, as a
   provider outage does. Before, checking a code answered a 500 for an account
   holder and "wrong code" for a stranger (#38).
@@ -37,6 +37,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   temporary database or network error is answered "try again shortly". Any other
   error is now treated as a bug and answered with a 500. When sending a code,
   12.3.0 answered it as "code sent" instead; checking a code already gave a 500.
+- **If your `sendCode` connects to each recipient's own mail server** rather than
+  to one provider's API, throw `RecipientRefusedError` for network failures
+  there. A network error from `sendCode` now counts as your email provider being
+  down, so otherwise one address with a dead mail server would read as an outage
+  for everyone.
 
 ## [12.3.0] - 2026-11-21
 

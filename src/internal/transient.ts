@@ -8,9 +8,10 @@
 const TRANSIENT_SQLSTATE = /^(08...|53...|57P0[1-3]|57014|40001|40P01|55P03)$/;
 
 /**
- * Node and undici socket failures, and a temporary DNS failure (EAI_AGAIN).
- * Not ENOTFOUND: "no such name" is usually permanent, a misconfigured host,
- * which should fail loudly rather than read as "try again shortly" forever.
+ * Node and undici socket and DNS failures. ENOTFOUND is included: musl
+ * (Alpine) can report a resolver timeout as ENOTFOUND, and @smplcty/twilio
+ * 0.2.0 already treats every failed fetch as an outage. A truly misconfigured
+ * host still fails loudly, as error-level logs and 5xx answers.
  */
 const TRANSIENT_NET = new Set([
   'ECONNRESET',
@@ -18,6 +19,7 @@ const TRANSIENT_NET = new Set([
   'ETIMEDOUT',
   'EPIPE',
   'EAI_AGAIN',
+  'ENOTFOUND',
   'UND_ERR_CONNECT_TIMEOUT',
   'UND_ERR_HEADERS_TIMEOUT',
   'UND_ERR_BODY_TIMEOUT',

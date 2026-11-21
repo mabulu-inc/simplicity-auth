@@ -164,10 +164,8 @@ export function createMethodRouter(options: MethodRouterOptions): MethodRouter {
    */
   function onFailure(phase: 'initiate' | 'complete', identifier: string, err: unknown): void {
     const reveal = !!options.revealUnknownIdentifiers;
-    // An AuthError is a deliberate answer and is never reclassified. In
-    // particular a RecipientRefusedError wrapping a network code stays a
-    // refusal: what sendCode talks to is the app's business (it may be the
-    // recipient's own mail server), so only the app can say "outage".
+    // An AuthError is a deliberate answer and is never reclassified: a handler
+    // that wraps a provider's error has already decided what it means.
     if (err instanceof DeliveryUnavailableError || (!(err instanceof AuthError) && isTransientFailure(err))) {
       const outage =
         err instanceof DeliveryUnavailableError ? err : new DeliveryUnavailableError(undefined, { cause: err });
