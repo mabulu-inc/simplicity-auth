@@ -95,7 +95,9 @@ export class SignInRefusedError extends AuthError {
  * then answers every identifier of that kind with it, account or not, for
  * {@link OTP_OUTAGE_WINDOW_SECONDS}, so the answer doesn't reveal who has an
  * account. An app's `sendCode` can throw it to mark a provider error as an
- * outage. A failure about one recipient must not be this error.
+ * outage. The router also uses it for a temporary database or network failure
+ * anywhere on the code path. A failure about one recipient must not be this
+ * error: that is {@link RecipientRefusedError}.
  */
 export class DeliveryUnavailableError extends AuthError {
   override readonly name = 'DeliveryUnavailableError';
@@ -122,5 +124,23 @@ export class UnknownIdentifierError extends AuthError {
 
   constructor(message: string = 'No account uses that email address or phone number') {
     super(message);
+  }
+}
+
+/**
+ * Thrown by a handler when the provider refused this one recipient: an
+ * invalid or blocked number, a rejected address. Retrying won't help.
+ *
+ * By default the router answers it as for an unknown identifier (and logs
+ * it), because only an account holder's request reaches the provider. With
+ * `revealUnknownIdentifiers`, it reaches the caller, so the page can say a code
+ * couldn't be sent to that address.
+ */
+export class RecipientRefusedError extends AuthError {
+  override readonly name = 'RecipientRefusedError';
+  override readonly code = 'RECIPIENT_REFUSED' as const;
+
+  constructor(message: string = "A sign-in code couldn't be sent to that address", options: { cause?: unknown } = {}) {
+    super(message, { cause: options.cause });
   }
 }

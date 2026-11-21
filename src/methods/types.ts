@@ -95,19 +95,20 @@ export interface MethodRouterOptions {
    *  identifier belongs to someone who must use SSO. */
   revealSsoRequiredUsers?: boolean;
   /** Refuse an email address or phone number that no account uses with
-   *  {@link UnknownIdentifierError}, and answer a failed send with
-   *  {@link DeliveryUnavailableError}, so the page can tell people what happened.
+   *  {@link UnknownIdentifierError}, a refused address with
+   *  {@link RecipientRefusedError}, and an outage with
+   *  {@link DeliveryUnavailableError} (no outage window), so the page can tell
+   *  people what happened.
    *  Off by default, because both reveal who has an account. Turn it on only
    *  when the app rate-limits code sign-in per client: the library can't, and
    *  without it the answer can be scraped. Needs a handler with `resolveUser`
    *  (both shipped handlers have one); without it, unknown identifiers are
    *  answered as when this is off. */
   revealUnknownIdentifiers?: boolean;
-  /** Told when code sign-in fails in a way the caller isn't shown in full:
-   *  an outage (see {@link DeliveryUnavailableError}), or, with
-   *  `revealUnknownIdentifiers` off, any non-`AuthError` failure in the owner's
-   *  SSO check or the handler's `initiate`. The identifier and the error's
-   *  message are never logged. Defaults to `console`, so an outage is never silent. */
+  /** Told about every failure on the code path: an outage (`error`), a
+   *  provider refusing one recipient (`warn`), and a bug (`error`, then
+   *  rethrown). The identifier and the error's message are never logged.
+   *  Defaults to `console`, so a failure is never silent. */
   logger?: Logger;
 }
 
@@ -146,18 +147,19 @@ export interface MethodRouter {
    *  SSO-required verified domain, and with `revealSsoRequiredUsers` for any
    *  identifier whose owner has one.
    *
-   *  Throws {@link DeliveryUnavailableError} when codes can't be sent: by
-   *  default, for every identifier of the kind while an outage window is open
-   *  (see `OTP_OUTAGE_WINDOW_SECONDS`), and with `revealUnknownIdentifiers`,
-   *  whenever the send fails. With `revealUnknownIdentifiers` it also throws
-   *  {@link UnknownIdentifierError}. Otherwise, any other failure once the
-   *  identifier is resolved (an `AuthError` aside) is reported to `logger` and
-   *  answered as an unknown identifier is. */
+   *  Throws {@link DeliveryUnavailableError} for a temporary failure (a
+   *  provider outage, or a database or network failure on a short list): by
+   *  default, for every identifier of the kind while the outage window is open
+   *  (see `OTP_OUTAGE_WINDOW_SECONDS`). A provider's refusal of one recipient
+   *  is answered as an unknown identifier is, or, with
+   *  `revealUnknownIdentifiers`, thrown as {@link RecipientRefusedError}, along
+   *  with {@link UnknownIdentifierError}. Any other error is a bug: logged and
+   *  rethrown. */
   initiateOtp(input: { identifier: string }): Promise<MethodInitiateResult>;
   /** User-bound (OTP) phase 2. Throws {@link OtpNotAllowedError} when no OTP
    *  handler is configured, {@link SsoRequiredError} when the signed-in user has
    *  an address at an SSO-required verified domain, and
-   *  {@link DeliveryUnavailableError} when the provider can't check codes
-   *  (by default, for every identifier of the kind for the outage window). */
+   *  {@link DeliveryUnavailableError} for a temporary failure, as for
+   *  `initiateOtp`. Any other error is a bug: logged and rethrown. */
   completeOtp(input: { identifier: string; credential: string }): Promise<ResolvedUser>;
 }

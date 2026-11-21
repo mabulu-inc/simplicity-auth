@@ -6,7 +6,14 @@ import {
   tenantRequiresSso,
 } from '../internal/email-domain.js';
 import type { Logger, Queryable } from '../types.js';
-import { DeliveryUnavailableError, OtpNotAllowedError, SsoRequiredError, UnknownIdentifierError } from './errors.js';
+import { isTransientFailure } from '../internal/transient.js';
+import {
+  DeliveryUnavailableError,
+  OtpNotAllowedError,
+  RecipientRefusedError,
+  SsoRequiredError,
+  UnknownIdentifierError,
+} from './errors.js';
 import type {
   AuthDomain,
   IdentifierKind,
@@ -137,7 +144,44 @@ export function createMethodRouter(options: MethodRouterOptions): MethodRouter {
   ): DeliveryUnavailableError {
     outageUntil.set(`${phase}:${identifierKind(identifier)}`, Date.now() + OTP_OUTAGE_WINDOW_SECONDS * 1000);
     report('error', `OTP ${phase} unavailable`, identifier, err.cause ?? err);
-    return new DeliveryUnavailableError(err.message, { cause: err, retryAfterSeconds: OTP_OUTAGE_WINDOW_SECONDS });
+    return new DeliveryUnavailableError(err.message, {
+      cause: err.cause ?? err,
+      retryAfterSeconds: OTP_OUTAGE_WINDOW_SECONDS,
+    });
+  }
+
+  /**
+   * Answers a failure on the code path, by kind of failure (#38):
+   *
+   * - a temporary one (a provider outage, or a database or network failure on
+   *   the explicit list) is thrown as {@link DeliveryUnavailableError}; in hide
+   *   mode it also opens the outage window, so everyone gets that answer;
+   * - a refusal of this one recipient is logged, then thrown with
+   *   `revealUnknownIdentifiers` or, without it, returns, for the caller to
+   *   answer as for an unknown identifier;
+   * - any other `AuthError` is the router's or a handler's deliberate answer;
+   * - anything else is a bug: logged and rethrown, so it stays a loud 500.
+   */
+  function onFailure(phase: 'initiate' | 'complete', identifier: string, err: unknown): void {
+    const reveal = !!options.revealUnknownIdentifiers;
+    // A refusal wraps the provider's error; a temporary one (a dropped
+    // connection inside sendCode, say) is an outage, not about this recipient.
+    const underlying = err instanceof RecipientRefusedError && err.cause !== undefined ? err.cause : err;
+    if (err instanceof DeliveryUnavailableError || isTransientFailure(underlying)) {
+      const outage =
+        err instanceof DeliveryUnavailableError ? err : new DeliveryUnavailableError(undefined, { cause: underlying });
+      if (!reveal) throw openOutage(phase, identifier, outage);
+      report('error', `OTP ${phase} unavailable`, identifier, outage.cause ?? outage);
+      throw outage;
+    }
+    if (err instanceof RecipientRefusedError) {
+      report('warn', 'OTP recipient refused', identifier, err.cause ?? err);
+      if (reveal) throw err;
+      return;
+    }
+    if (err instanceof AuthError) throw err;
+    report('error', `OTP ${phase} failed`, identifier, err);
+    throw err;
   }
 
   /** The handler for this identifier: the single one, or the one for its kind. */
@@ -185,15 +229,13 @@ export function createMethodRouter(options: MethodRouterOptions): MethodRouter {
       if (typeof identifier !== 'string' || identifier.length === 0) {
         throw new InvalidInputError('identifier must be a non-empty string');
       }
-      await refuseSsoRequiredDomain(identifier);
-      const handler = handlerFor(identifier);
       // Before anything account-dependent, so everyone of this kind gets the same answer.
       if (!options.revealUnknownIdentifiers) refuseDuringOutage('initiate', identifier);
-      const user = await handler.resolveUser?.({ db: options.db, identifier });
-      if (user === null && options.revealUnknownIdentifiers) throw new UnknownIdentifierError();
-      // From here on work runs only for a known identifier. In hide mode, a
-      // failure must not mark it as having an account.
       try {
+        await refuseSsoRequiredDomain(identifier);
+        const handler = handlerFor(identifier);
+        const user = await handler.resolveUser?.({ db: options.db, identifier });
+        if (user === null && options.revealUnknownIdentifiers) throw new UnknownIdentifierError();
         // The same verdict completeOtp reaches on the resolved user. By default it
         // answers as for an unknown identifier, so it doesn't reveal whose a phone is.
         const ownerRequires = user ? await ssoRequiredDomainForUser(q, user.userId) : null;
@@ -201,15 +243,7 @@ export function createMethodRouter(options: MethodRouterOptions): MethodRouter {
         if (ownerRequires) return { otpSent: true };
         return await handler.initiate({ db: options.db, identifier });
       } catch (err) {
-        if (options.revealUnknownIdentifiers) {
-          // Nothing to hide: say plainly that the code didn't go out.
-          if (err instanceof AuthError) throw err;
-          report('error', 'OTP initiate failed', identifier, err);
-          throw new DeliveryUnavailableError(undefined, { cause: err });
-        }
-        if (err instanceof DeliveryUnavailableError) throw openOutage('initiate', identifier, err);
-        if (err instanceof AuthError) throw err;
-        report('error', 'OTP initiate failed', identifier, err);
+        onFailure('initiate', identifier, err);
         return { otpSent: true };
       }
     },
@@ -221,24 +255,19 @@ export function createMethodRouter(options: MethodRouterOptions): MethodRouter {
       if (typeof credential !== 'string' || credential.length === 0) {
         throw new InvalidInputError('credential must be a non-empty string');
       }
-      await refuseSsoRequiredDomain(identifier);
-      const handler = handlerFor(identifier);
       if (!options.revealUnknownIdentifiers) refuseDuringOutage('complete', identifier);
-      let user: ResolvedUser;
       try {
-        user = await handler.complete({ db: options.db, identifier, credential });
+        await refuseSsoRequiredDomain(identifier);
+        const user = await handlerFor(identifier).complete({ db: options.db, identifier, credential });
+        // Checked on the resolved user, not just the identifier: someone whose
+        // email is at an SSO-required domain can't sign in by phone either.
+        const required = await ssoRequiredDomainForUser(q, user.userId);
+        if (required) throw new SsoRequiredError(required);
+        return user;
       } catch (err) {
-        // A provider that can't check codes must not make a right code look wrong.
-        if (err instanceof DeliveryUnavailableError && !options.revealUnknownIdentifiers) {
-          throw openOutage('complete', identifier, err);
-        }
+        onFailure('complete', identifier, err);
         throw err;
       }
-      // Checked on the resolved user, not just the identifier: someone whose
-      // email is at an SSO-required domain can't sign in by phone either.
-      const required = await ssoRequiredDomainForUser(q, user.userId);
-      if (required) throw new SsoRequiredError(required);
-      return user;
     },
   };
 }

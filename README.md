@@ -515,7 +515,7 @@ const logger = pino();
 await withSession(pool, { token, roleName: 'user' }, fn, { logger });
 ```
 
-Pass one to `createMethodRouter({ logger })` too (`createAuthHandlers` passes its own). A code that fails to send for one recipient is answered as for an unknown identifier, so the log is the only place that failure shows. Without a logger, the router writes these failures to the console rather than dropping them.
+Pass one to `createMethodRouter({ logger })` too (`createAuthHandlers` passes its own). A code that fails to send for one recipient is answered as for an unknown identifier, so the log is the only place that failure shows. Without a logger, the router writes code sign-in failures to the console rather than dropping them.
 
 The `Logger` interface matches pino's `(data, msg)` shape. The library never logs the raw token or PII — only structural events with safe identifiers (a hash fingerprint, `userId`, role).
 

@@ -6,6 +6,7 @@ import {
   InvalidInputError,
   OTP_OUTAGE_WINDOW_SECONDS,
   OtpNotAllowedError,
+  RecipientRefusedError,
   UnknownIdentifierError,
   VerificationFailedError,
 } from '../src/index.js';
@@ -187,24 +188,28 @@ describe('createMethodRouter — a failed send answers as for an unknown identif
     twilioVerifyHandler({
       client: {
         sendVerificationCode: async () => {
-          throw new TypeError('fetch failed');
+          // A network failure as @smplcty/twilio 0.1.x surfaces it: undici's TypeError with a socket code.
+          throw new TypeError('fetch failed', { cause: { code: 'ECONNREFUSED' } });
         },
         verifyVerificationCode: async () => false,
       },
     });
 
-  for (const [name, handler] of [
-    ['email code', failingEmail],
-    ['Twilio Verify', failingTwilio],
-  ] as const) {
-    it(`${name}: a registered contact gets the same answer as a stranger`, async () => {
-      const router = createMethodRouter({ db: db.pool, otpHandler: handler() });
-      const known = await router.initiateOtp({ identifier: KNOWN }).catch((err: unknown) => err);
-      const stranger = await router.initiateOtp({ identifier: STRANGER }).catch((err: unknown) => err);
-      expect(known).toEqual({ otpSent: true });
-      expect(known).toEqual(stranger);
-    });
-  }
+  it('email code: a refused address gets the same answer as a stranger', async () => {
+    const router = createMethodRouter({ db: db.pool, otpHandler: failingEmail(), logger: recordingLogger() });
+    const known = await router.initiateOtp({ identifier: KNOWN }).catch((err: unknown) => err);
+    const stranger = await router.initiateOtp({ identifier: STRANGER }).catch((err: unknown) => err);
+    expect(known).toEqual({ otpSent: true });
+    expect(known).toEqual(stranger);
+  });
+
+  it('Twilio Verify: a network failure is an outage, answered the same for a stranger (#38)', async () => {
+    const router = createMethodRouter({ db: db.pool, otpHandler: failingTwilio(), logger: recordingLogger() });
+    const known = await router.initiateOtp({ identifier: KNOWN }).catch((err: unknown) => err);
+    const stranger = await router.initiateOtp({ identifier: STRANGER }).catch((err: unknown) => err);
+    expect(known).toBeInstanceOf(DeliveryUnavailableError);
+    expect(stranger).toBeInstanceOf(DeliveryUnavailableError);
+  });
 
   it('reports the failure to the logger with the kind, never the identifier', async () => {
     const logger = recordingLogger();
@@ -242,7 +247,7 @@ describe('createMethodRouter — a failed send answers as for an unknown identif
     expect(await router.initiateOtp({ identifier: KNOWN })).toEqual({ otpSent: true });
   });
 
-  it("logs the error's code when it is a short token, such as a database SQLSTATE", async () => {
+  it("a temporary failure inside sendCode is an outage, logged with the error's own code (#38)", async () => {
     const logger = recordingLogger();
     const dbDown = emailCodeHandler({
       codeSecret: 'test-email-code-secret-at-least-32-bytes',
@@ -251,8 +256,13 @@ describe('createMethodRouter — a failed send answers as for an unknown identif
       },
     });
     const router = createMethodRouter({ db: db.pool, otpHandler: dbDown, logger });
-    await router.initiateOtp({ identifier: KNOWN });
-    expect(logger.entries[0]?.data).toEqual({ kind: 'email', error: 'error', code: '57P01' });
+    expect(await router.initiateOtp({ identifier: KNOWN }).catch((e: unknown) => e)).toBeInstanceOf(
+      DeliveryUnavailableError,
+    );
+    expect(logger.entries[0]).toEqual({
+      data: { kind: 'email', error: 'error', code: '57P01' },
+      msg: 'OTP initiate unavailable',
+    });
   });
 
   it("leaves out a code that isn't a short token, since it could carry the address", async () => {
@@ -281,7 +291,7 @@ describe('createMethodRouter — a failed send answers as for an unknown identif
     expect(logger.entries[0]?.data).toEqual({ kind: 'email', error: 'ProviderError' });
   });
 
-  it("a database failure in the owner's SSO check, which runs only for a registered contact, answers as for a stranger", async () => {
+  it("a database failure in the owner's SSO check, which runs only for a registered contact, is an outage for everyone (#38)", async () => {
     // The per-user SSO lookup reads the user's email domains; fail just that query.
     const flaky = {
       query: (text: string, values?: unknown[]) =>
@@ -298,8 +308,8 @@ describe('createMethodRouter — a failed send answers as for an unknown identif
     const router = createMethodRouter({ db: flaky, otpHandler: email, logger });
     const known = await router.initiateOtp({ identifier: KNOWN }).catch((err: unknown) => err);
     const stranger = await router.initiateOtp({ identifier: STRANGER }).catch((err: unknown) => err);
-    expect(known).toEqual({ otpSent: true });
-    expect(known).toEqual(stranger);
+    expect(known).toBeInstanceOf(DeliveryUnavailableError);
+    expect(stranger).toBeInstanceOf(DeliveryUnavailableError);
     expect(sent).toEqual([]);
     expect(logger.entries[0]?.data).toEqual({ kind: 'email', error: 'Error', code: '57P01' });
   });
@@ -489,7 +499,10 @@ describe('createMethodRouter — outages and reveal mode (#36)', () => {
     await failing(Object.assign(new Error('x'), { name: 'RestException', code: 21608 })).initiateOtp({
       identifier: KNOWN,
     });
-    await failing(new TypeError('fetch failed', { cause: { code: 'ECONNRESET' } })).initiateOtp({ identifier: KNOWN });
+    // A socket reset inside sendCode is an outage (#38), still logged with the cause's code.
+    await failing(new TypeError('fetch failed', { cause: { code: 'ECONNRESET' } }))
+      .initiateOtp({ identifier: KNOWN })
+      .catch(() => {});
     expect(entries).toEqual([
       { kind: 'email', error: 'RestException', code: '21608' },
       { kind: 'email', error: 'TypeError', code: 'ECONNRESET' },
@@ -528,7 +541,7 @@ describe('createMethodRouter — outages and reveal mode (#36)', () => {
       expect(await router.initiateOtp({ identifier: KNOWN })).toEqual({ otpSent: true });
     });
 
-    it('says a failed send failed, and opens no window for anyone else', async () => {
+    it('says a code could not be sent to a refused address, and opens no window for anyone else', async () => {
       const router = createMethodRouter({
         db: db.pool,
         logger: silent,
@@ -540,7 +553,7 @@ describe('createMethodRouter — outages and reveal mode (#36)', () => {
           },
         }),
       });
-      await expect(router.initiateOtp({ identifier: KNOWN })).rejects.toBeInstanceOf(DeliveryUnavailableError);
+      await expect(router.initiateOtp({ identifier: KNOWN })).rejects.toBeInstanceOf(RecipientRefusedError);
       await expect(router.initiateOtp({ identifier: STRANGER })).rejects.toBeInstanceOf(UnknownIdentifierError);
     });
 
@@ -554,5 +567,114 @@ describe('createMethodRouter — outages and reveal mode (#36)', () => {
       await expect(router.initiateOtp({ identifier: KNOWN })).rejects.toBeInstanceOf(DeliveryUnavailableError);
       await expect(router.initiateOtp({ identifier: STRANGER })).rejects.toBeInstanceOf(UnknownIdentifierError);
     });
+  });
+});
+
+describe('createMethodRouter — temporary failures and bugs (#38)', () => {
+  let db: TestDb;
+  beforeAll(async () => {
+    db = await startTestDb();
+  });
+  afterAll(async () => {
+    await db.shutdown();
+  });
+
+  const KNOWN = 'bob@globex.com';
+  const STRANGER = 'nobody-38@globex.com';
+  const outcome = (p: Promise<unknown>) => p.catch((err: unknown) => err);
+
+  function recording() {
+    const entries: { level: string; data: Record<string, unknown>; msg: string }[] = [];
+    const at = (level: string) => (data: Record<string, unknown>, msg: string) =>
+      void entries.push({ level, data, msg });
+    return { entries, logger: { debug: at('debug'), info: at('info'), warn: at('warn'), error: at('error') } };
+  }
+
+  /** A handler that knows only KNOWN and fails with `err` after finding it. */
+  function failingAfterLookup(err: unknown, phase: 'initiate' | 'complete'): MethodHandler {
+    const user = { userId: db.ids.users.bob, userCommunicationMethodId: db.ids.ucm.bob };
+    return {
+      resolveUser: async ({ identifier }) => (identifier === KNOWN ? user : null),
+      initiate: async ({ identifier }) => {
+        if (identifier === KNOWN && phase === 'initiate') throw err;
+        return { otpSent: true };
+      },
+      complete: async ({ identifier }) => {
+        if (identifier !== KNOWN) throw new VerificationFailedError();
+        if (phase === 'complete') throw err;
+        return user;
+      },
+    };
+  }
+
+  it('a bug on the account-holder path is thrown and logged, never answered as "code sent"', async () => {
+    const bug = new TypeError("Cannot read properties of undefined (reading 'x')");
+    const { entries, logger } = recording();
+    const router = createMethodRouter({ db: db.pool, logger, otpHandler: failingAfterLookup(bug, 'initiate') });
+    expect(await outcome(router.initiateOtp({ identifier: KNOWN }))).toBe(bug);
+    expect(entries).toEqual([
+      { level: 'error', data: { kind: 'email', error: 'TypeError' }, msg: 'OTP initiate failed' },
+    ]);
+    // A bug opens no outage window.
+    expect(await router.initiateOtp({ identifier: STRANGER })).toEqual({ otpSent: true });
+  });
+
+  it('a bug during a check is thrown and logged too', async () => {
+    const bug = new RangeError('bad');
+    const { entries, logger } = recording();
+    const router = createMethodRouter({ db: db.pool, logger, otpHandler: failingAfterLookup(bug, 'complete') });
+    expect(await outcome(router.completeOtp({ identifier: KNOWN, credential: '123456' }))).toBe(bug);
+    expect(entries.map((e) => e.msg)).toEqual(['OTP complete failed']);
+  });
+
+  it.each([
+    ['a dropped connection (SQLSTATE 08006)', Object.assign(new Error('x'), { code: '08006' })],
+    ['a statement timeout (57014)', Object.assign(new Error('x'), { code: '57014' })],
+    ['a deadlock (40P01)', Object.assign(new Error('x'), { code: '40P01' })],
+    ['too many connections (53300)', Object.assign(new Error('x'), { code: '53300' })],
+    ["pg-pool's connect timeout", new Error('timeout exceeded when trying to connect')],
+    ["pg's connection terminated", new Error('Connection terminated unexpectedly')],
+    ['a socket reset', Object.assign(new Error('x'), { code: 'ECONNRESET' })],
+  ])('%s during a check is an outage for everyone, not a 500 for account holders', async (_name, err) => {
+    const router = createMethodRouter({
+      db: db.pool,
+      logger: recording().logger,
+      otpHandler: failingAfterLookup(err, 'complete'),
+    });
+    expect(await outcome(router.completeOtp({ identifier: KNOWN, credential: '123456' }))).toBeInstanceOf(
+      DeliveryUnavailableError,
+    );
+    expect(await outcome(router.completeOtp({ identifier: STRANGER, credential: '123456' }))).toBeInstanceOf(
+      DeliveryUnavailableError,
+    );
+  });
+
+  it('a SQLSTATE that is not temporary (a unique violation) is a bug', async () => {
+    const err = Object.assign(new Error('x'), { code: '23505' });
+    const router = createMethodRouter({
+      db: db.pool,
+      logger: recording().logger,
+      otpHandler: failingAfterLookup(err, 'complete'),
+    });
+    expect(await outcome(router.completeOtp({ identifier: KNOWN, credential: '123456' }))).toBe(err);
+  });
+
+  it("Twilio's refusal of one number is now logged, and still hidden", async () => {
+    const { entries, logger } = recording();
+    const router = createMethodRouter({
+      db: db.pool,
+      logger,
+      otpHandler: twilioVerifyHandler({
+        client: { sendVerificationCode: async () => false, verifyVerificationCode: async () => false },
+      }),
+    });
+    expect(await router.initiateOtp({ identifier: KNOWN })).toEqual({ otpSent: true });
+    expect(entries).toEqual([
+      {
+        level: 'warn',
+        data: { kind: 'email', error: 'RecipientRefusedError', code: 'RECIPIENT_REFUSED' },
+        msg: 'OTP recipient refused',
+      },
+    ]);
   });
 });

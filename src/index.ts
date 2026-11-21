@@ -59,6 +59,7 @@ export {
   DeliveryUnavailableError,
   EmailDomainNotVerifiedError,
   OtpNotAllowedError,
+  RecipientRefusedError,
   SignInRefusedError,
   SsoRequiredError,
   UnknownIdentifierError,

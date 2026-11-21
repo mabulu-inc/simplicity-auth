@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `RecipientRefusedError`, for when the provider refuses one email address or
+  phone number. With `revealUnknownIdentifiers`, sign-in now answers it with
+  `422 RECIPIENT_REFUSED` ("a code couldn't be sent to that address") instead of
+  "try again shortly", because retrying won't help.
+
+### Fixed
+
+- **A temporary database or network failure no longer answers with an error that
+  only account holders get.** A dropped connection, pool timeout, statement
+  timeout, deadlock or socket reset during code sign-in or code checking now gets
+  "try again shortly" (`503 DELIVERY_UNAVAILABLE`), the same for everyone, as a
+  provider outage does. Before, checking a code answered a 500 for an account
+  holder and "wrong code" for a stranger (#38).
+- **Bugs on the code sign-in path are no longer hidden as "code sent".** An
+  unexpected error is now logged and answered with a 500, so it shows up in
+  monitoring, instead of telling people a code is on its way.
+- **Twilio refusing a number is now logged.** It is still answered as for an
+  unknown number.
+
 ## [12.3.0] - 2026-11-21
 
 ### Added

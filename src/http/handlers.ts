@@ -15,6 +15,7 @@ import {
   DeliveryUnavailableError,
   EmailDomainNotVerifiedError,
   OtpNotAllowedError,
+  RecipientRefusedError,
   SignInRefusedError,
   SsoRequiredError,
   UnknownIdentifierError,
@@ -119,6 +120,7 @@ function toErrorResponse(err: unknown): Response {
   }
   if (err instanceof VerificationFailedError) return json({ error: 'Verification failed', code: err.code }, 401);
   if (err instanceof UnknownIdentifierError) return json({ error: err.message, code: err.code }, 404);
+  if (err instanceof RecipientRefusedError) return json({ error: err.message, code: err.code }, 422);
   if (err instanceof DeliveryUnavailableError) {
     const res = json({ error: "Sign-in codes aren't working right now. Try again shortly.", code: err.code }, 503);
     if (err.retryAfterSeconds !== undefined) res.headers.set('retry-after', String(err.retryAfterSeconds));

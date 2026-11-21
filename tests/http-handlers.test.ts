@@ -914,6 +914,27 @@ describe('createAuthHandlers — otpInitiate when the send fails (#36)', () => {
     }
   });
 
+  it('with revealUnknownIdentifiers, answers a refused address with 422 (#38)', async () => {
+    const handlers = createAuthHandlers(
+      makeConfig({
+        tenantSlugFromRequest: () => null,
+        revealUnknownIdentifiers: true,
+        logger: silent,
+        otpHandler: emailCodeHandler({
+          codeSecret: 'test-email-code-secret-at-least-32-bytes',
+          sendCode: async () => {
+            throw Object.assign(new Error('rejected'), { name: 'MessageRejected' });
+          },
+        }),
+      }),
+    );
+    const res = await handlers.otpInitiate(
+      req('POST', 'http://localhost/auth/otp/initiate', { body: { identifier: 'bob@globex.com' } }),
+    );
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as { code: string }).code).toBe('RECIPIENT_REFUSED');
+  });
+
   it('with revealUnknownIdentifiers, answers an unknown identifier with 404', async () => {
     const handlers = createAuthHandlers(
       makeConfig({

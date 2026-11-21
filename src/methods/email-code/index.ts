@@ -2,7 +2,7 @@ import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
 import { InvalidInputError } from '../../errors.js';
 import { findUserByCommunicationMethod } from '../../find-user-by-communication-method.js';
 import { isDevOtpEnrolled, verifyDevOtp } from '../../dev-otp.js';
-import { VerificationFailedError } from '../errors.js';
+import { DeliveryUnavailableError, RecipientRefusedError, VerificationFailedError } from '../errors.js';
 import type { Queryable } from '../../types.js';
 import type {
   MethodCompleteContext,
@@ -176,7 +176,10 @@ export function emailCodeHandler(options: EmailCodeHandlerOptions): MethodHandle
         } catch (err) {
           // The person never got this code, so they keep the one they had.
           await ctx.db.query(UNDO_ISSUE, [issued.id, issued.retiredIds]);
-          throw err;
+          // sendCode's errors are the provider's answer, not a bug of ours: an
+          // outage when the app says so, otherwise a refusal of this address.
+          if (err instanceof DeliveryUnavailableError) throw err;
+          throw new RecipientRefusedError(undefined, { cause: err });
         }
       }
       return { otpSent: true };

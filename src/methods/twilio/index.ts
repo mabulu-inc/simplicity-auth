@@ -2,7 +2,7 @@ import type { TwilioVerifyClient, VerificationChannel } from '@smplcty/twilio';
 import { InvalidInputError } from '../../errors.js';
 import { findUserByCommunicationMethod } from '../../find-user-by-communication-method.js';
 import { verifyDevOtp, isDevOtpEnrolled } from '../../dev-otp.js';
-import { DeliveryUnavailableError, VerificationFailedError } from '../errors.js';
+import { DeliveryUnavailableError, RecipientRefusedError, VerificationFailedError } from '../errors.js';
 import type {
   MethodCompleteContext,
   MethodHandler,
@@ -77,7 +77,8 @@ async function callTwilio<T>(call: () => Promise<T>): Promise<T> {
  * credentials, a 5xx, an account-wide rate limit) is thrown as
  * {@link DeliveryUnavailableError}, which the router answers honestly for every
  * phone number alike. With 0.1.x, every Twilio refusal looks like one about the
- * number, so an outage is answered as "code sent".
+ * number, so an outage is answered as "code sent" (and logged). A network
+ * failure is recognized with either version.
  *
  * Drives `@smplcty/twilio` (an **optional peer**); auth core depends on
  * neither it nor `jose`. Install the peer and pass a client:
@@ -118,8 +119,9 @@ export function twilioVerifyHandler(options: TwilioVerifyHandlerOptions): Method
       }
 
       // `false` is Twilio refusing this one number (invalid, blocked, too many
-      // attempts): answered as for an unknown identifier, so it isn't revealed.
-      await callTwilio(() => client.sendVerificationCode({ channel: verifyChannel, to: identifier }));
+      // attempts). The router hides it by default, so it isn't revealed, and logs it.
+      const sent = await callTwilio(() => client.sendVerificationCode({ channel: verifyChannel, to: identifier }));
+      if (!sent) throw new RecipientRefusedError();
       return { otpSent: true };
     },
 
