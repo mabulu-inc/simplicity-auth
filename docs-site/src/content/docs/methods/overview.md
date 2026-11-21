@@ -63,8 +63,9 @@ Every failure on the code path gets one of three answers:
 
 - **A temporary failure, which retrying will fix.** That covers a provider
   outage (it's down, its credentials are wrong, an account-wide rate limit), and
-  a database or network failure on a short list: a dropped connection, a pool
-  timeout, a statement timeout, a deadlock, a socket reset. The Twilio handler
+  a failure of our own database or Twilio calls on a short list: a dropped
+  connection, a pool timeout, a statement timeout, a deadlock, a socket reset, a
+  temporary DNS failure. The Twilio handler
   reports an outage on its own with `@smplcty/twilio` 0.2.0 or later, and an
   email `sendCode` does so by throwing `DeliveryUnavailableError`. For the next
   `OTP_OUTAGE_WINDOW_SECONDS` (60), every identifier of that kind, account or
@@ -75,17 +76,21 @@ Every failure on the code path gets one of three answers:
 - **The provider refused this one recipient** (an invalid or blocked number, a
   rejected address). It is answered as for an unknown identifier and logged as a
   warning. Any error `sendCode` throws, other than `DeliveryUnavailableError`,
-  counts as this.
-- **Anything else is a bug.** (A custom handler should therefore throw
-  `RecipientRefusedError` or `DeliveryUnavailableError` for a provider's answer.) It is logged and rethrown, so the HTTP tier answers
-  `500`. It is never answered as "code sent" or as an outage, because hiding a
-  bug keeps it alive.
+  counts as this, even a network error: `sendCode` may talk to the recipient's
+  own mail server, so only the app can say a failure is an outage.
+- **Anything else is a bug.** It is logged and rethrown, so the HTTP tier
+  answers `500`. It is never answered as "code sent" or as an outage, because
+  hiding a bug keeps it alive. A custom handler should therefore throw
+  `RecipientRefusedError` or `DeliveryUnavailableError` for a provider's answer.
 
-Two compromises, both accepted on purpose:
+Three compromises, all accepted on purpose:
 
 - The request that opens an outage window always belongs to an account holder,
   so during an outage an attacker can learn about roughly one identifier per
   window, per server process.
+- One request can open the window for everyone. A temporary failure that a
+  single request can cause (a deadlock, say) shuts code sign-in of that kind for
+  the window. Rate-limiting code sign-in per client limits how often.
 - A bug that fires only for account holders reveals who has an account, until
   it is fixed. A sign-in bug should be loud and short-lived.
 

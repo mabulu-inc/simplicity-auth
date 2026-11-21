@@ -177,7 +177,9 @@ export function emailCodeHandler(options: EmailCodeHandlerOptions): MethodHandle
           // The person never got this code, so they keep the one they had.
           await ctx.db.query(UNDO_ISSUE, [issued.id, issued.retiredIds]);
           // sendCode's errors are the provider's answer, not a bug of ours: an
-          // outage when the app says so, otherwise a refusal of this address.
+          // outage only when the app says so (it may talk to the recipient's own
+          // mail server, so a network error can be about this address),
+          // otherwise a refusal of this address.
           if (err instanceof DeliveryUnavailableError) throw err;
           throw new RecipientRefusedError(undefined, { cause: err });
         }

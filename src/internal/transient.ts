@@ -7,14 +7,17 @@
 /** SQLSTATEs: connection errors (class 08), resource limits, shutdowns, timeouts, retryable conflicts. */
 const TRANSIENT_SQLSTATE = /^(08...|53...|57P0[1-3]|57014|40001|40P01|55P03)$/;
 
-/** Node and undici socket and DNS failures. */
+/**
+ * Node and undici socket failures, and a temporary DNS failure (EAI_AGAIN).
+ * Not ENOTFOUND: "no such name" is usually permanent, a misconfigured host,
+ * which should fail loudly rather than read as "try again shortly" forever.
+ */
 const TRANSIENT_NET = new Set([
   'ECONNRESET',
   'ECONNREFUSED',
   'ETIMEDOUT',
   'EPIPE',
   'EAI_AGAIN',
-  'ENOTFOUND',
   'UND_ERR_CONNECT_TIMEOUT',
   'UND_ERR_HEADERS_TIMEOUT',
   'UND_ERR_BODY_TIMEOUT',

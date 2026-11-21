@@ -164,12 +164,13 @@ export function createMethodRouter(options: MethodRouterOptions): MethodRouter {
    */
   function onFailure(phase: 'initiate' | 'complete', identifier: string, err: unknown): void {
     const reveal = !!options.revealUnknownIdentifiers;
-    // A refusal wraps the provider's error; a temporary one (a dropped
-    // connection inside sendCode, say) is an outage, not about this recipient.
-    const underlying = err instanceof RecipientRefusedError && err.cause !== undefined ? err.cause : err;
-    if (err instanceof DeliveryUnavailableError || isTransientFailure(underlying)) {
+    // An AuthError is a deliberate answer and is never reclassified. In
+    // particular a RecipientRefusedError wrapping a network code stays a
+    // refusal: what sendCode talks to is the app's business (it may be the
+    // recipient's own mail server), so only the app can say "outage".
+    if (err instanceof DeliveryUnavailableError || (!(err instanceof AuthError) && isTransientFailure(err))) {
       const outage =
-        err instanceof DeliveryUnavailableError ? err : new DeliveryUnavailableError(undefined, { cause: underlying });
+        err instanceof DeliveryUnavailableError ? err : new DeliveryUnavailableError(undefined, { cause: err });
       if (!reveal) throw openOutage(phase, identifier, outage);
       report('error', `OTP ${phase} unavailable`, identifier, outage.cause ?? outage);
       throw outage;
