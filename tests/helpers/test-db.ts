@@ -129,6 +129,21 @@ async function loadIds(pool: pg.Pool): Promise<SeededIds> {
  * `shutdown()` drops the clone. The container itself is reaped by
  * Testcontainers (Ryuk) even on a hard crash, so nothing leaks between runs.
  */
+/** How long shutdown() waits for closed pools' connections to leave the server. */
+const DISCONNECT_WAIT_MS = 5_000;
+
+async function waitForDisconnects(admin: pg.Pool, dbName: string): Promise<void> {
+  const deadline = Date.now() + DISCONNECT_WAIT_MS;
+  while (Date.now() < deadline) {
+    const { rows } = await admin.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
+      [dbName],
+    );
+    if (rows[0]?.n === 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
 export async function startTestDb(): Promise<TestDb> {
   const adminUrl = process.env.AUTH_TEST_ADMIN_URL;
   const template = process.env.AUTH_TEST_TEMPLATE_DB;
@@ -172,8 +187,13 @@ export async function startTestDb(): Promise<TestDb> {
     },
     async shutdown() {
       await pool.end();
-      // Drop the clone. Terminate any straggler connections first so DROP
-      // DATABASE doesn't fail on "database is being accessed by other users".
+      // pool.end() resolves before its connections have left the server. Wait
+      // for them, so they aren't terminated while closing: the server's
+      // "terminating connection" then reaches a client nobody listens to, and
+      // vitest reports it as an unhandled error that fails the run.
+      await waitForDisconnects(admin, dbName);
+      // Anything still connected is a pool a test never closed: terminate it so
+      // DROP DATABASE doesn't fail on "database is being accessed by other users".
       await admin.query(
         `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
         [dbName],
