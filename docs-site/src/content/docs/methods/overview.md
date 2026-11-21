@@ -84,6 +84,9 @@ Every failure on the code path gets one of three answers:
   answers `500`. It is never answered as "code sent" or as an outage, because
   hiding a bug keeps it alive. A custom handler should therefore throw
   `RecipientRefusedError` or `DeliveryUnavailableError` for a provider's answer.
+  A raw network or database error from a handler counts as an outage, the same
+  as from `sendCode`, so a handler that connects to each recipient's own server
+  must throw `RecipientRefusedError` for network failures there.
 
 Three compromises, all accepted on purpose:
 

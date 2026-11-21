@@ -37,7 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   temporary database or network error is answered "try again shortly". Any other
   error is now treated as a bug and answered with a 500. When sending a code,
   12.3.0 answered it as "code sent" instead; checking a code already gave a 500.
-- **If your `sendCode` connects to each recipient's own mail server** rather than
+- **If your `sendCode`, or your own code handler, connects to each recipient's
+  own mail server** rather than
   to one provider's API, throw `RecipientRefusedError` for network failures
   there. A network error from `sendCode` now counts as your email provider being
   down, so otherwise one address with a dead mail server would read as an outage
