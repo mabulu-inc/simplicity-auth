@@ -689,15 +689,13 @@ describe('createMethodRouter — temporary failures and bugs (#38)', () => {
     });
   });
 
-  it("a failure undoing the code doesn't replace the provider's answer", async () => {
-    // Fail only the undo, with a deadlock that would otherwise open the outage window.
+  /** An email handler whose sendCode throws `sendErr`, on a database whose undo statement fails with `undoErr`. */
+  function failingUndo(undoErr: unknown) {
     const flaky = {
       query: (text: string, values?: unknown[]) =>
-        text.includes('delivery_failed_at = CASE')
-          ? Promise.reject(Object.assign(new Error('deadlock detected'), { code: '40P01' }))
-          : db.pool.query(text, values),
+        text.includes('delivery_failed_at = CASE') ? Promise.reject(undoErr) : db.pool.query(text, values),
     } as unknown as typeof db.pool;
-    const router = createMethodRouter({
+    return createMethodRouter({
       db: flaky,
       logger: recording().logger,
       otpHandler: emailCodeHandler({
@@ -707,8 +705,53 @@ describe('createMethodRouter — temporary failures and bugs (#38)', () => {
         },
       }),
     });
+  }
+
+  it('a temporary failure undoing the code is an outage, for everyone', async () => {
+    const router = failingUndo(Object.assign(new Error('deadlock detected'), { code: '40P01' }));
+    expect(await outcome(router.initiateOtp({ identifier: KNOWN }))).toBeInstanceOf(DeliveryUnavailableError);
+    expect(await outcome(router.initiateOtp({ identifier: STRANGER }))).toBeInstanceOf(DeliveryUnavailableError);
+  });
+
+  it('any other failure undoing the code is a loud bug, never swallowed', async () => {
+    const undoErr = Object.assign(new Error('column "superseded_at" does not exist'), { code: '42703' });
+    const router = failingUndo(undoErr);
+    expect(await outcome(router.initiateOtp({ identifier: KNOWN }))).toBe(undoErr);
+  });
+
+  it.each([
+    ['an AbortSignal timeout', () => new DOMException('The operation timed out.', 'TimeoutError')],
+    ["the AWS SDK's TimeoutError", () => Object.assign(new Error('timed out'), { name: 'TimeoutError' })],
+    [
+      'a socket reset an SDK wraps twice',
+      () => new Error('send failed', { cause: new TypeError('fetch failed', { cause: { code: 'ECONNRESET' } }) }),
+    ],
+  ])('%s inside sendCode is an outage', async (_name, makeErr) => {
+    const router = createMethodRouter({
+      db: db.pool,
+      logger: recording().logger,
+      otpHandler: emailCodeHandler({
+        codeSecret: 'test-email-code-secret-at-least-32-bytes',
+        sendCode: async () => {
+          throw makeErr();
+        },
+      }),
+    });
+    expect(await outcome(router.initiateOtp({ identifier: KNOWN }))).toBeInstanceOf(DeliveryUnavailableError);
+  });
+
+  it("an AuthError from sendCode other than the two it may throw is a refusal, so it can't reveal the account", async () => {
+    const router = createMethodRouter({
+      db: db.pool,
+      logger: recording().logger,
+      otpHandler: emailCodeHandler({
+        codeSecret: 'test-email-code-secret-at-least-32-bytes',
+        sendCode: async () => {
+          throw new InvalidInputError('template is missing {code}');
+        },
+      }),
+    });
     expect(await router.initiateOtp({ identifier: KNOWN })).toEqual({ otpSent: true });
-    expect(await router.initiateOtp({ identifier: STRANGER })).toEqual({ otpSent: true });
   });
 
   it('a SQLSTATE that is not temporary (a unique violation) is a bug', async () => {

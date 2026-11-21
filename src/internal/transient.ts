@@ -40,9 +40,25 @@ function isTransientCode(code: unknown): boolean {
   return typeof code === 'string' && (TRANSIENT_SQLSTATE.test(code) || TRANSIENT_NET.has(code));
 }
 
-/** Whether `err` (or its `cause`) is a temporary database or network failure. */
+/** How far down a `cause` chain to look: SDKs wrap fetch, which wraps the socket error. */
+const MAX_CAUSE_DEPTH = 3;
+
+/**
+ * Whether `err`, or an error up to {@link MAX_CAUSE_DEPTH} causes below it, is a
+ * temporary database or network failure: a code on the list above, a pg
+ * connection message, or a `TimeoutError` by name (`AbortSignal.timeout()`,
+ * the AWS SDK), which carries no errno.
+ *
+ * Best effort for errors the library didn't create: an app that knows its
+ * provider is down should throw `DeliveryUnavailableError` itself.
+ */
 export function isTransientFailure(err: unknown): boolean {
-  const e = err as { code?: unknown; message?: unknown; cause?: { code?: unknown } } | null;
-  if (isTransientCode(e?.code) || isTransientCode(e?.cause?.code)) return true;
-  return err instanceof Error && PG_CONNECTION_MESSAGES.includes(err.message);
+  let current: unknown = err;
+  for (let depth = 0; depth <= MAX_CAUSE_DEPTH && current != null; depth++) {
+    const e = current as { code?: unknown; name?: unknown; message?: unknown; cause?: unknown };
+    if (isTransientCode(e.code) || e.name === 'TimeoutError') return true;
+    if (current instanceof Error && PG_CONNECTION_MESSAGES.includes(current.message)) return true;
+    current = e.cause;
+  }
+  return false;
 }

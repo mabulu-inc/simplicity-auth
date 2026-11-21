@@ -23,9 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "try again shortly" (`503 DELIVERY_UNAVAILABLE`), the same for everyone, as a
   provider outage does. Before, checking a code answered a 500 for an account
   holder and "wrong code" for a stranger (#38).
-- **Bugs on the code sign-in path are no longer hidden as "code sent".** An
-  unexpected error is now logged and answered with a 500, so it shows up in
-  monitoring, instead of telling people a code is on its way.
+- **Bugs in the library's code sign-in path are no longer hidden as "code
+  sent".** An unexpected error is now logged and answered with a 500, so it shows
+  up in monitoring, instead of telling people a code is on its way. An error from
+  your own `sendCode` is still read as your provider's answer: one that isn't a
+  temporary network failure counts as a refusal of that address, logged as a
+  warning, so watch for "OTP recipient refused" after a deploy.
 - **Twilio refusing a number is now logged.** It is still answered as for an
   unknown number.
 
@@ -39,9 +42,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   12.3.0 answered it as "code sent" instead; checking a code already gave a 500.
 - **If your `sendCode`, or your own code handler, connects to each recipient's
   own mail server** rather than to one provider's API, throw
-  `RecipientRefusedError` for network failures there. A raw network error now
+  `RecipientRefusedError` for network and DNS failures there (an MX lookup for a
+  domain that doesn't exist fails with `ENOTFOUND`). A raw network error now
   counts as your email provider being down, so otherwise one address with a dead
-  mail server would read as an outage for everyone.
+  mail domain would read as an outage for everyone.
+- **Don't wrap a provider outage in `RecipientRefusedError`.** It is your
+  explicit answer and is never second-guessed, so a wrapped `ECONNREFUSED` from
+  your provider's API reads as a refusal of that one address. Throw
+  `DeliveryUnavailableError` for an outage, or let the raw error through.
 
 ## [12.3.0] - 2026-11-21
 

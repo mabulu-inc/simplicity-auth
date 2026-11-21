@@ -111,14 +111,17 @@ const RECORD_FAILED_ATTEMPT = `
  * What a `sendCode` error means. The app's own `AuthError`s
  * (`DeliveryUnavailableError`, `RecipientRefusedError`) are its explicit
  * answer. Otherwise a temporary network or database failure is an outage of
- * the app's email provider, and anything else a refusal of this address. An app
+ * the app's email provider, and anything else a refusal of this address,
+ * including any other `AuthError`: passing one through would answer an account
+ * holder differently from a stranger. An app
  * whose `sendCode` connects to each recipient's own mail server must throw
  * `RecipientRefusedError` for those failures, or one dead mail domain would
  * read as an outage for everyone.
  */
 function classifySendFailure(err: unknown): unknown {
-  if (err instanceof AuthError) return err;
-  if (isTransientFailure(err)) return new DeliveryUnavailableError(undefined, { cause: err });
+  if (err instanceof DeliveryUnavailableError || err instanceof RecipientRefusedError) return err;
+  if (!(err instanceof AuthError) && isTransientFailure(err))
+    return new DeliveryUnavailableError(undefined, { cause: err });
   return new RecipientRefusedError(undefined, { cause: err });
 }
 
@@ -191,9 +194,10 @@ export function emailCodeHandler(options: EmailCodeHandlerOptions): MethodHandle
           await sendCode({ to: identifier, code });
         } catch (err) {
           // The person never got this code, so they keep the one they had. If
-          // that fails too, the provider's answer still decides the response:
-          // the person is left without their old code, as before 12.3.0.
-          await ctx.db.query(UNDO_ISSUE, [issued.id, issued.retiredIds]).catch(() => {});
+          // the undo itself fails, that is our database failing, and it is
+          // answered like any other (#38): an outage if temporary, otherwise a
+          // loud, logged 500. Swallowing it would hide a broken statement.
+          await ctx.db.query(UNDO_ISSUE, [issued.id, issued.retiredIds]);
           throw classifySendFailure(err);
         }
       }
