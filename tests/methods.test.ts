@@ -635,6 +635,7 @@ describe('createMethodRouter — temporary failures and bugs (#38)', () => {
     ["pg-pool's connect timeout", new Error('timeout exceeded when trying to connect')],
     ["pg's connection terminated", new Error('Connection terminated unexpectedly')],
     ['a socket reset', Object.assign(new Error('x'), { code: 'ECONNRESET' })],
+    ['a DNS failure', new TypeError('fetch failed', { cause: { code: 'ENOTFOUND' } })],
   ])('%s during a check is an outage for everyone, not a 500 for account holders', async (_name, err) => {
     const router = createMethodRouter({
       db: db.pool,

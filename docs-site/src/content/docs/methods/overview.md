@@ -76,7 +76,8 @@ Every failure on the code path gets one of three answers:
   rejected address). It is answered as for an unknown identifier and logged as a
   warning. Any error `sendCode` throws, other than `DeliveryUnavailableError`,
   counts as this.
-- **Anything else is a bug.** It is logged and rethrown, so the HTTP tier answers
+- **Anything else is a bug.** (A custom handler should therefore throw
+  `RecipientRefusedError` or `DeliveryUnavailableError` for a provider's answer.) It is logged and rethrown, so the HTTP tier answers
   `500`. It is never answered as "code sent" or as an outage, because hiding a
   bug keeps it alive.
 

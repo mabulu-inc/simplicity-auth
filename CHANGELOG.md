@@ -28,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Twilio refusing a number is now logged.** It is still answered as for an
   unknown number.
 
+### Changed
+
+- **If you wrote your own code handler:** throw `RecipientRefusedError` when the
+  provider refuses one recipient, and `DeliveryUnavailableError` when it can't
+  send to anyone. Any other error is now treated as a bug and answered with a
+  500, as it was before 12.3.0. In 12.3.0 it was answered as "code sent".
+
 ## [12.3.0] - 2026-11-21
 
 ### Added
